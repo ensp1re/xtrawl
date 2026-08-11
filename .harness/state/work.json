@@ -9,7 +9,7 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T19:01:16Z",
+  "updatedAt": "2026-08-11T19:10:19Z",
   "nextAction": "TODO: design the extensibility milestone covering caller-owned account state, manual cursor pagination, and an MCP server for agent-harness operation.",
   "blocker": null,
   "verification": {
@@ -34,11 +34,16 @@
       "clean-room tarball install (public API import and installed CLI help)",
       "npm publish xtrawl@0.1.0 (prepublish verification passed)",
       "clean-room registry install of xtrawl@0.1.0 (public API import and installed CLI help)",
+      "npm run verify (MIT license and GitHub Actions CI)",
+      "GitHub Actions workflow YAML parse",
+      "npm pack dry run (MIT LICENSE included; private files excluded)",
       "official harness validator --strict",
       "official context-budget evaluator",
       "build-agent-harness bundled script tests"
     ],
-    "failed": [],
+    "failed": [
+      "initial GitHub Actions run on Node.js 22.5.0 (bundled npm 10.8.2 exited before installing development dependencies)"
+    ],
     "notRun": [
       "bounded live matrix after parity changes (X_AUTH_TOKEN and X_CSRF_TOKEN were not present in the process environment)"
     ]

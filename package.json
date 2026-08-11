@@ -2,7 +2,7 @@
   "name": "xtrawl",
   "version": "0.1.0",
   "description": "Scrape public X posts, profiles, followers, and following",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +10,7 @@
     "dist",
     "README.md",
     "DOCUMENTATION.md",
+    "LICENSE",
     "docs"
   ],
   "repository": {

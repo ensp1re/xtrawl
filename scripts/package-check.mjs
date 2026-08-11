@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const required = ["dist/index.js", "dist/cli/main.js", "dist/index.d.ts"];
+const required = ["dist/index.js", "dist/cli/main.js", "dist/index.d.ts", "LICENSE"];
 for (const relative of required) {
   await access(join(root, relative));
 }
@@ -15,7 +15,7 @@ if (packageJson.name !== "xtrawl") {
 if (packageJson.version !== "0.1.0") {
   throw new Error("unexpected package version");
 }
-if (packageJson.license !== "UNLICENSED") {
+if (packageJson.license !== "MIT") {
   throw new Error("unexpected package license");
 }
 if (packageJson.main !== "./dist/index.js" || packageJson.types !== "./dist/index.d.ts") {
@@ -24,7 +24,7 @@ if (packageJson.main !== "./dist/index.js" || packageJson.types !== "./dist/inde
 if (packageJson.bin?.xtrawl !== "dist/cli/main.js") {
   throw new Error("unexpected CLI binary");
 }
-const expectedFiles = ["dist", "README.md", "DOCUMENTATION.md", "docs"];
+const expectedFiles = ["dist", "README.md", "DOCUMENTATION.md", "LICENSE", "docs"];
 if (JSON.stringify(packageJson.files) !== JSON.stringify(expectedFiles)) {
   throw new Error("unexpected npm package allowlist");
 }

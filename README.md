@@ -4,10 +4,18 @@
   Scrape public X posts, profiles, followers, and following.
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/xtrawl"><img alt="npm version" src="https://img.shields.io/npm/v/xtrawl"></a>
+  <a href="https://github.com/ensp1re/xtrawl/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/ensp1re/xtrawl/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
+
 XTrawl collects public data from X without an official API key. Search posts, read profiles and
 timelines, inspect individual posts, collect follower and following lists, and save results as CSV or
 JSON. It splits long searches, rotates authorized accounts when requests fail, and saves resumable
 progress in SQLite. Use it from TypeScript or the command line.
+
+XTrawl is published on npm as [`xtrawl`](https://www.npmjs.com/package/xtrawl).
 
 ## What XTrawl collects
 
