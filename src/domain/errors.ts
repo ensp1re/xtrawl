@@ -8,7 +8,7 @@ export interface ErrorDiagnostics {
   readonly [key: string]: unknown;
 }
 
-export class GraphHarvesterError extends Error {
+export class XTrawlError extends Error {
   public readonly code: string;
   public readonly diagnostics: Readonly<ErrorDiagnostics>;
 
@@ -20,25 +20,25 @@ export class GraphHarvesterError extends Error {
   }
 }
 
-export class ConfigError extends GraphHarvesterError {
+export class ConfigError extends XTrawlError {
   public constructor(message: string) {
     super("config_error", message);
   }
 }
 
-export class ManifestError extends GraphHarvesterError {
+export class ManifestError extends XTrawlError {
   public constructor(message: string) {
     super("manifest_error", message);
   }
 }
 
-export class AccountPoolExhausted extends GraphHarvesterError {
+export class AccountPoolExhausted extends XTrawlError {
   public constructor(message = "No eligible account is available.", diagnostics: ErrorDiagnostics = {}) {
     super("account_pool_exhausted", message, diagnostics);
   }
 }
 
-export class EngineError extends GraphHarvesterError {
+export class EngineError extends XTrawlError {
   public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
     super("engine_error", message, diagnostics);
   }
@@ -75,13 +75,13 @@ export class AuthError extends RunFailed {
   }
 }
 
-export class ResumeError extends GraphHarvesterError {
+export class ResumeError extends XTrawlError {
   public constructor(message: string) {
     super("resume_error", message);
   }
 }
 
-export class AccountSessionBuildError extends GraphHarvesterError {
+export class AccountSessionBuildError extends XTrawlError {
   public readonly statusCode: number;
   public readonly category: ErrorCategory;
 

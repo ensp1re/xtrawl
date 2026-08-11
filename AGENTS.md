@@ -1,4 +1,4 @@
-# X Graph Harvester
+# XTrawl
 
 ## Purpose
 

@@ -1,4 +1,4 @@
-import { GraphHarvester } from "../../src/client/client.js";
+import { XTrawl } from "../../src/client/client.js";
 import { AccountPoolExhausted, RunFailed } from "../../src/domain/errors.js";
 import {
   sessionFactory,
@@ -10,7 +10,7 @@ import {
 } from "../helpers/fake-http.js";
 
 function createClient() {
-  return new GraphHarvester({
+  return new XTrawl({
     dbPath: ":memory:",
     minDelayMs: 0,
     cooldownJitterMs: 0,
@@ -54,7 +54,7 @@ describe("public client", () => {
   test("supports provision=false with a pre-existing state database", () => {
     const first = createClient();
     first.close();
-    const client = new GraphHarvester({ dbPath: ":memory:", provision: false });
+    const client = new XTrawl({ dbPath: ":memory:", provision: false });
     expect(client.inspect().accounts).toHaveLength(0);
     client.close();
   });
@@ -72,13 +72,13 @@ describe("public client", () => {
   });
 
   test("returns a typed pool error when no account is provisioned", async () => {
-    const client = new GraphHarvester({ dbPath: ":memory:", provision: false });
+    const client = new XTrawl({ dbPath: ":memory:", provision: false });
     await expect(client.search("hello")).rejects.toThrow(AccountPoolExhausted);
     client.close();
   });
 
   test("records remote failures as run failures", async () => {
-    const client = new GraphHarvester({
+    const client = new XTrawl({
       dbPath: ":memory:",
       minDelayMs: 0,
       cooldownJitterMs: 0,

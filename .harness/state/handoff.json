@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-11T15:39:44Z",
-  "goal": "Build and verify a standalone strict TypeScript read-only graph client.",
-  "scope": ["x-graph-harvester"],
+  "updatedAt": "2026-08-11T16:20:13Z",
+  "goal": "Build and verify XTrawl, a standalone strict TypeScript read-only X scraper and crawler.",
+  "scope": ["xtrawl"],
   "status": "ready_for_review",
-  "completed": ["Harness workflow, product contract, architecture, security boundary, and build plan created.", "Strict typed client, auth loaders, SQLite state, account pool, GraphQL transport, manifest handling, query builders, pagination, outputs, library facade, and CLI implemented.", "Deterministic behavioral coverage expanded across all implemented domains.", "Husky 9 configured with a pre-commit hook that requires lint and build to pass."],
-  "nextActions": ["Review, commit, and push the verified Husky hook changes.", "Run the opt-in live integration suite only when caller-owned credentials are intentionally supplied."],
-  "decisions": ["Use Node.js 22.5+ built-in SQLite and async APIs.", "Keep domains in separate small folders and files.", "Keep live credentials outside the repository and gate live tests by environment variables."],
+  "completed": ["Harness workflow, product contract, architecture, security boundary, and build plan created.", "Strict typed client, auth loaders, SQLite state, account pool, GraphQL transport, manifest handling, query builders, pagination, outputs, library facade, and CLI implemented.", "Deterministic behavioral coverage expanded across all implemented domains.", "Husky 9 configured with a pre-commit hook that requires lint and build to pass.", "Project, package, CLI, public client, and public error base rebranded to XTrawl/xtrawl."],
+  "nextActions": ["Run the opt-in live integration suite only when caller-owned credentials are intentionally supplied."],
+  "decisions": ["Use Node.js 22.5+ built-in SQLite and async APIs.", "Keep domains in separate small folders and files.", "Keep live credentials outside the repository and gate live tests by environment variables.", "Use XTrawl as the brand and xtrawl as the GitHub repository, npm package, and CLI command."],
   "openQuestions": [],
   "risks": ["Live GraphQL identifiers and platform responses can change; manifest refresh and fake transport tests are required."],
-  "touchedPaths": ["AGENTS.md", "README.md", "package.json", "package-lock.json", ".husky/pre-commit", "tsconfig.json", "tsconfig.test.json", "src/", "tests/", "docs/", ".harness/"],
+  "touchedPaths": ["AGENTS.md", "README.md", "package.json", "package-lock.json", ".husky/pre-commit", "scripts/package-check.mjs", "tsconfig.json", "tsconfig.test.json", "src/", "tests/", "docs/", ".harness/"],
   "doNotRepeat": ["Do not add credentials or external project names to this tree.", "Do not treat skipped live tests as network verification."],
   "contextSources": ["docs/product/specification.md", "docs/architecture/overview.md", "docs/security/data-boundary.md", ".harness/manifest.json"],
   "verification": {
-    "passed": ["npm install --ignore-scripts", "npm run verify", "Husky pre-commit hook (npm run lint && npm run build)", "npm run test:integration (two tests skipped without credentials)", "npm run cli -- --help", "official harness validator --strict", "official context-budget evaluator", "build-agent-harness bundled script tests"],
+    "passed": ["npm install --ignore-scripts", "npm run verify", "npm run check (XTrawl rebrand)", "Husky pre-commit hook (npm run lint && npm run build)", "npm run test:integration (two tests skipped without credentials)", "npm run cli -- --help", "XTrawl public export smoke check", "npm pack --dry-run --ignore-scripts --cache /tmp/xtrawl-npm-cache", "official harness validator --strict", "official context-budget evaluator", "build-agent-harness bundled script tests"],
     "failed": [],
     "notRun": ["credential-dependent live network tests"]
   },
   "git": {
     "branch": "main",
-    "head": "c6b7419",
+    "head": "2c3aa17",
     "worktree": "dirty"
   }
 }

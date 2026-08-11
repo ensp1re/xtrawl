@@ -1,4 +1,4 @@
-import type { GraphHarvesterError } from "../domain/errors.js";
+import type { XTrawlError } from "../domain/errors.js";
 import { sleep } from "../pool/limiter.js";
 
 export interface RetryOptions {
@@ -27,7 +27,7 @@ export async function withRetry<T>(
 
 function isRetryable(error: unknown): boolean {
   if (!error || typeof error !== "object") return true;
-  const candidate = error as Partial<GraphHarvesterError>;
+  const candidate = error as Partial<XTrawlError>;
   const status =
     candidate.diagnostics && typeof candidate.diagnostics.statusCode === "number"
       ? candidate.diagnostics.statusCode

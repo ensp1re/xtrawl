@@ -1,12 +1,12 @@
-export const HELP = `x-graph-harvester — read-only public graph client
+export const HELP = `xtrawl — read-only X scraper and crawler
 
 Usage:
-  x-graph-harvester [global options] search [query] [options]
-  x-graph-harvester [global options] profile-tweets USER [USER ...] [options]
-  x-graph-harvester [global options] followers USER [USER ...] [options]
-  x-graph-harvester [global options] following USER [USER ...] [options]
-  x-graph-harvester [global options] verified-followers USER [USER ...] [options]
-  x-graph-harvester [global options] user-info USER [USER ...] [options]
+  xtrawl [global options] search [query] [options]
+  xtrawl [global options] profile-tweets USER [USER ...] [options]
+  xtrawl [global options] followers USER [USER ...] [options]
+  xtrawl [global options] following USER [USER ...] [options]
+  xtrawl [global options] verified-followers USER [USER ...] [options]
+  xtrawl [global options] user-info USER [USER ...] [options]
 
 Global options:
   --auth-token TOKEN       session auth cookie

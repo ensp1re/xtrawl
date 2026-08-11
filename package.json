@@ -1,7 +1,7 @@
 {
-  "name": "x-graph-harvester",
+  "name": "xtrawl",
   "version": "0.1.0",
-  "description": "Strictly typed read-only X web GraphQL client with account pooling and resumable output",
+  "description": "Strictly typed read-only X scraper and crawler with account pooling and resumable output",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"
@@ -11,7 +11,7 @@
     "./cli": "./dist/cli/main.js"
   },
   "bin": {
-    "x-graph-harvester": "./dist/cli/main.js"
+    "xtrawl": "./dist/cli/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

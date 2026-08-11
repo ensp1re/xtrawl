@@ -1,4 +1,4 @@
-import { GraphHarvester } from "../../src/client/client.js";
+import { XTrawl } from "../../src/client/client.js";
 
 const enabled =
   process.env.RUN_LIVE_TESTS === "1" &&
@@ -8,7 +8,7 @@ const suite = enabled ? describe : describe.skip;
 
 suite("live read-only checks", () => {
   test("resolves a public profile", async () => {
-    const client = await GraphHarvester.create({
+    const client = await XTrawl.create({
       dbPath: ":memory:",
       authToken: process.env.X_AUTH_TOKEN,
       csrfToken: process.env.X_CSRF_TOKEN,
@@ -23,7 +23,7 @@ suite("live read-only checks", () => {
   }, 60_000);
 
   test("runs a bounded search", async () => {
-    const client = await GraphHarvester.create({
+    const client = await XTrawl.create({
       dbPath: ":memory:",
       authToken: process.env.X_AUTH_TOKEN,
       csrfToken: process.env.X_CSRF_TOKEN,

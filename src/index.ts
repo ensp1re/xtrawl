@@ -1,4 +1,4 @@
-export { GraphHarvester } from "./client/client.js";
+export { XTrawl } from "./client/client.js";
 export type { ClientOptions } from "./client/types.js";
 export type { ClientConfig, ConfigInput } from "./config/types.js";
 export { validateConfig } from "./config/validation.js";
@@ -32,7 +32,7 @@ export {
   AuthError,
   ConfigError,
   EngineError,
-  GraphHarvesterError,
+  XTrawlError,
   ManifestError,
   NetworkError,
   ProxyError,

@@ -1,8 +1,8 @@
-# X Graph Harvester
+# XTrawl
 
-Strictly typed TypeScript client for read-only collection of public X data through the web GraphQL
-surface. It supports authenticated cookie sessions, account pooling, cooldowns, resumable cursors,
-profile and relationship collection, search filters, and CSV/JSON output.
+Strictly typed TypeScript scraper and crawler for read-only collection of public X data through the
+web GraphQL surface. It supports authenticated cookie sessions, account pooling, cooldowns,
+resumable cursors, profile and relationship collection, search filters, and CSV/JSON output.
 
 ## Requirements
 
@@ -19,9 +19,9 @@ npm run verify
 ## Library example
 
 ```ts
-import { GraphHarvester } from "./src/index.js";
+import { XTrawl } from "xtrawl";
 
-const client = new GraphHarvester({
+const client = new XTrawl({
   cookies: { authToken: process.env.X_AUTH_TOKEN!, csrfToken: process.env.X_CSRF_TOKEN! },
 });
 

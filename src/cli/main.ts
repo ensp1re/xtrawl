@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { GraphHarvester } from "../client/client.js";
+import { XTrawl } from "../client/client.js";
 import { HELP } from "./help.js";
 import { collectionOptionsFromCli, parseArgs, searchRequestFromCli, CliUsageError } from "./parser.js";
 
@@ -11,7 +11,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
       return 0;
     }
     const pretty = args.options.pretty === true;
-    const client = await GraphHarvester.create({
+    const client = await XTrawl.create({
       authToken: args.authToken,
       csrfToken: args.csrfToken,
       cookiesFile: args.cookiesFile,

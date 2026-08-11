@@ -27,7 +27,7 @@ import { targetUsername } from "../query/builder.js";
 import { collectFollows, collectProfileTweets, type CollectionContext } from "./collectors.js";
 import type { ClientInspection, ClientOptions } from "./types.js";
 
-export class GraphHarvester {
+export class XTrawl {
   public readonly config: ClientConfig;
   public readonly storage: StorageBundle;
   private readonly pool: AccountPool;
@@ -53,8 +53,8 @@ export class GraphHarvester {
     this.engine = new ApiEngine(this.config, manifests, new GraphqlTransport(transactions));
   }
 
-  public static async create(options: ClientOptions = {}): Promise<GraphHarvester> {
-    const client = new GraphHarvester(options);
+  public static async create(options: ClientOptions = {}): Promise<XTrawl> {
+    const client = new XTrawl(options);
     await client.bootstrapMissingAccounts();
     return client;
   }

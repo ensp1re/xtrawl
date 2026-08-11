@@ -3,7 +3,7 @@ import {
   AccountPoolExhausted,
   AccountSessionBuildError,
   AuthError,
-  GraphHarvesterError,
+  XTrawlError,
   NetworkError,
   RateLimitError,
 } from "../domain/errors.js";
@@ -53,7 +53,7 @@ export class AccountPool {
 
   private releaseFailure(account: AccountLease, error: unknown): void {
     const status =
-      error instanceof GraphHarvesterError && typeof error.diagnostics.statusCode === "number"
+      error instanceof XTrawlError && typeof error.diagnostics.statusCode === "number"
         ? error.diagnostics.statusCode
         : error instanceof AccountSessionBuildError
           ? error.statusCode
