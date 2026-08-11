@@ -180,17 +180,74 @@ SQLite tracks account health, request usage, leases, run history, resumable curs
 operation manifests. It does not store collected posts or profiles unless you explicitly enable file
 output.
 
-## Accounts and proxies
+## Use multiple accounts
 
-For one account, pass `X_AUTH_TOKEN` and `X_CSRF_TOKEN` directly. For an account pool, provide a JSON,
-Netscape-cookie, or delimited account file with `--cookies-file`, or use the equivalent library
-options. A global proxy can be set with `--proxy`; library account records may also define their own
-HTTP, HTTPS, or SOCKS5 proxy.
+Create a local `accounts.json` file containing one object per account. Each live account needs an
+`auth_token` and `ct0` value from the same authorized browser session. You can provide them as named
+fields or inside `cookies`:
 
-XTrawl selects only accounts that have usable authentication, are outside cooldown, are not already
-leased, and remain within configured daily limits. Rate-limit and transient failures trigger a
-cooldown and can switch the current task to another account. Authentication failures attempt a CSRF
-cookie repair before the account remains unusable.
+```json
+[
+  {
+    "username": "collector-one",
+    "authToken": "replace-with-auth-token",
+    "csrfToken": "replace-with-ct0"
+  },
+  {
+    "username": "collector-two",
+    "cookies": {
+      "auth_token": "replace-with-auth-token",
+      "ct0": "replace-with-ct0"
+    },
+    "proxy": "socks5://proxy-user:proxy-password@127.0.0.1:1080"
+  }
+]
+```
+
+Keep this file outside version control. Load the complete pool with the CLI:
+
+```bash
+npx xtrawl \
+  --cookies-file ./accounts.json \
+  --db-path ./state/xtrawl.db \
+  --concurrency 5 \
+  search "typescript" \
+  --limit 100
+```
+
+Or load it from the TypeScript API:
+
+```ts
+const client = await XTrawl.create({
+  accountsFile: "./accounts.json",
+  dbPath: "./state/xtrawl.db",
+  concurrency: 5,
+});
+
+console.log(client.poolSummary);
+```
+
+XTrawl imports the accounts into SQLite and leases eligible accounts as work is scheduled. The
+default concurrency is five; loading more accounts does not make every account run at once. There is
+no configured account-count limit, but very large pools have not been load-tested. A failed page is
+retried up to three times and may switch accounts twice by default. Rate-limit, network, proxy, and
+transient failures place the affected account into cooldown. A rejected session marks the account
+unusable and attempts a CSRF-cookie repair before another account is selected.
+
+An account-level `proxy` takes precedence over the global `--proxy`. HTTP, HTTPS, and SOCKS5 proxies
+are supported. XTrawl does not currently accept a separate proxy list or automatically assign and
+reassign proxies; attach a proxy to each account when you need one-to-one account/proxy routing.
+
+### Cookie lifecycle
+
+XTrawl does not refresh cookies after every request and does not persist `Set-Cookie` response
+updates. It reuses each stored cookie jar until the session fails. `XTrawl.create()` tries to obtain a
+missing `ct0` cookie when an `auth_token` is available, and an authentication failure triggers the
+same repair path. If the `auth_token` has expired or been revoked, replace the stored cookies before
+using that account again.
+
+XTrawl does not perform username/password, email, or two-factor login. Supplying those fields without
+valid session cookies does not make an account eligible for requests.
 
 ## Resume and save output
 
