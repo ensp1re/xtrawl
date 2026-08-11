@@ -27,7 +27,8 @@
     "verify": "npm run format:check && npm run lint && npm run build && npm test -- --runInBand && npm run package:check && npm run harness:validate && npm run harness:budget",
     "package:check": "node scripts/package-check.mjs",
     "harness:validate": "python3 scripts/harness/validate.py",
-    "harness:budget": "python3 scripts/harness/budget.py"
+    "harness:budget": "python3 scripts/harness/budget.py",
+    "prepare": "husky"
   },
   "dependencies": {
     "undici": "^7.22.0"
@@ -39,6 +40,7 @@
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
     "eslint": "^10.6.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "prettier": "^3.9.4",
     "ts-jest": "^29.3.4",
