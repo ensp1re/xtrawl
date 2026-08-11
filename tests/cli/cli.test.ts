@@ -107,6 +107,19 @@ describe("CLI parser", () => {
     expect(() => parseArgs(["unknown"])).toThrow(CliUsageError);
   });
 
+  test("supports verbose mode and nargs-style list filters", () => {
+    const args = parseArgs(["-v", "search", "query", "--from", "one", "two", "--lang", "en"]);
+    expect(args.verbose).toBe(true);
+    expect(searchRequestFromCli(args)).toMatchObject({ fromUsers: ["one", "two"], lang: "en" });
+  });
+
+  test("validates command option values before execution", () => {
+    expect(() => parseArgs(["search", "query", "--limit", "nope"])).toThrow(CliUsageError);
+    expect(() => parseArgs(["search", "query", "--min-likes", "-1"])).toThrow(CliUsageError);
+    expect(() => parseArgs(["search", "query", "--save-format", "xml"])).toThrow(CliUsageError);
+    expect(() => parseArgs(["search", "query", "--display-type", "Recent"])).toThrow(CliUsageError);
+  });
+
   test("maps relationship command types", () => {
     expect(followType("followers")).toBe("followers");
     expect(followType("following")).toBe("following");

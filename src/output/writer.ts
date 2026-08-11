@@ -9,13 +9,13 @@ export type OutputFormat = "csv" | "json" | "both";
 export async function saveRows(
   name: string,
   rows: readonly unknown[],
-  options: { readonly directory: string; readonly format: OutputFormat },
+  options: { readonly directory: string; readonly format: OutputFormat; readonly append?: boolean },
 ): Promise<void> {
   await mkdir(options.directory, { recursive: true });
   if (options.format === "json" || options.format === "both")
-    await writeJson(join(options.directory, `${name}.json`), rows);
+    await writeJson(join(options.directory, `${name}.json`), rows, options.append);
   if (options.format === "csv" || options.format === "both")
-    await writeCsv(join(options.directory, `${name}.csv`), rows.map(toFlatRow));
+    await writeCsv(join(options.directory, `${name}.csv`), rows.map(toFlatRow), options.append);
 }
 
 function toFlatRow(value: unknown): Record<string, unknown> {
@@ -36,5 +36,5 @@ function toFlatRow(value: unknown): Record<string, unknown> {
       media: tweet.media.imageLinks,
     };
   }
-  return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key !== "raw"));
 }

@@ -28,6 +28,7 @@ export interface SessionFactoryOptions {
   readonly bearerToken?: string;
   readonly userAgent?: string;
   readonly impersonate?: string;
+  readonly httpMode?: "auto" | "async" | "sync";
 }
 
 export type SessionFactory = (options: SessionFactoryOptions) => HttpSession;

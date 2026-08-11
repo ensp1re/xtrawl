@@ -18,12 +18,14 @@ export interface ManifestScrapeOptions {
 }
 
 export function extractManifestFromJavascript(source: string, fallback: ManifestPayload): ManifestPayload {
+  const operationFeatures = extractOperationFeaturesFromJavascript(source);
   return {
     ...fallback,
     queryIds: {
       ...fallback.queryIds,
       ...extractOperationQueryIdsFromJavascript(source),
     },
+    operationFeatures: mergeOperationFeatures(fallback.operationFeatures, operationFeatures),
     version: asString(fallback.version) ?? "live",
   };
 }
@@ -43,6 +45,29 @@ export function extractOperationQueryIdsFromJavascript(source: string): Record<s
     if (id) queryIds[key] = id;
   }
   return queryIds;
+}
+
+export function extractOperationFeaturesFromJavascript(
+  source: string,
+): Record<string, Record<string, boolean>> {
+  const out: Record<string, Record<string, boolean>> = {};
+  for (const [operationName, key] of Object.entries(OPERATION_NAMES)) {
+    const marker = new RegExp(`operationName\\s*:\\s*["']${operationName}["']`, "gu");
+    const match = marker.exec(source);
+    if (!match) continue;
+    const start = match.index;
+    const next = source.indexOf("operationName:", start + match[0].length);
+    const window = source.slice(start, next > start ? Math.min(next, start + 50_000) : start + 50_000);
+    const featureStart = window.indexOf("featureSwitches:[");
+    if (featureStart < 0) continue;
+    const featureEnd = window.indexOf("]", featureStart);
+    if (featureEnd < 0) continue;
+    const names = [...window.slice(featureStart, featureEnd).matchAll(/["']([^"']+)["']/gu)]
+      .map((item) => item[1])
+      .filter((item): item is string => Boolean(item));
+    if (names.length > 0) out[key] = Object.fromEntries(names.map((name) => [name, false]));
+  }
+  return out;
 }
 
 export async function scrapeManifestFromWeb(
@@ -68,10 +93,13 @@ export async function scrapeManifestFromWeb(
     .sort((left, right) => scriptPriority(left) - scriptPriority(right))
     .slice(0, options.maxScripts ?? 20);
   const discovered: Record<string, string> = {};
+  const discoveredFeatures: Record<string, Record<string, boolean>> = {};
   for (const url of scripts) {
     const bundle = await fetcher(url, { headers: scriptHeaders, redirect: "follow" });
     if (!bundle.ok) continue;
-    Object.assign(discovered, extractOperationQueryIdsFromJavascript(await bundle.text()));
+    const source = await bundle.text();
+    Object.assign(discovered, extractOperationQueryIdsFromJavascript(source));
+    Object.assign(discoveredFeatures, extractOperationFeaturesFromJavascript(source));
     if (Object.keys(discovered).length === Object.keys(OPERATION_NAMES).length) break;
   }
   if (Object.keys(discovered).length === 0) {
@@ -81,7 +109,21 @@ export async function scrapeManifestFromWeb(
     ...base,
     version: "web-live",
     queryIds: { ...base.queryIds, ...discovered },
+    operationFeatures: mergeOperationFeatures(base.operationFeatures, discoveredFeatures),
   };
+}
+
+function mergeOperationFeatures(
+  base: ManifestPayload["operationFeatures"],
+  discovered: Readonly<Record<string, Readonly<Record<string, boolean>>>>,
+): Record<string, Record<string, boolean>> {
+  const out: Record<string, Record<string, boolean>> = {};
+  if (base)
+    for (const [operation, features] of Object.entries(base))
+      out[operation] = { ...(features as Record<string, boolean>) };
+  for (const [operation, features] of Object.entries(discovered))
+    out[operation] = { ...(out[operation] ?? {}), ...features };
+  return out;
 }
 
 function safeScriptUrl(source: string): string | undefined {

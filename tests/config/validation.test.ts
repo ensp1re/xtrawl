@@ -12,6 +12,16 @@ describe("configuration validation", () => {
     expect(normalizeProxyPayload("localhost")).toBeUndefined();
   });
 
+  test("rejects invalid operational boundaries", () => {
+    expect(() => validateConfig({ maxAccountSwitches: -1 })).toThrow("non-negative");
+    expect(() => validateConfig({ proxyCheckUrl: "file:///tmp/probe" })).toThrow("HTTP(S)");
+  });
+
+  test("does not retain constructor-only values supplied at runtime", () => {
+    const config = validateConfig({ authToken: "secret" } as never) as unknown as Record<string, unknown>;
+    expect(config.authToken).toBeUndefined();
+  });
+
   test("rejects invalid modes, limits, and negative timing values", () => {
     expect(() => validateConfig({ apiHttpMode: "invalid" as never })).toThrow(ConfigError);
     expect(() => validateConfig({ concurrency: 0 })).toThrow(ConfigError);

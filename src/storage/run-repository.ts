@@ -56,6 +56,21 @@ export class RunRepository {
       ...(row.error_json ? { error: parseJson(row.error_json) } : {}),
     }));
   }
+
+  public last(): RunRecord | undefined {
+    return this.list(1)[0];
+  }
+
+  public summary(limit = 500): {
+    readonly totalRuns: number;
+    readonly byStatus: Readonly<Record<string, number>>;
+    readonly lastRun?: RunRecord;
+  } {
+    const runs = this.list(limit);
+    const byStatus: Record<string, number> = {};
+    for (const run of runs) byStatus[run.status] = (byStatus[run.status] ?? 0) + 1;
+    return { totalRuns: runs.length, byStatus, ...(runs[0] ? { lastRun: runs[0] } : {}) };
+  }
 }
 
 function parseJson(value: unknown): unknown {

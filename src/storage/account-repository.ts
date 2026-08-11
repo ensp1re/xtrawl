@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { AccountLease, AccountRecord, AccountSummary, CookieMap } from "../domain/accounts.js";
+import type {
+  AccountLease,
+  AccountRecord,
+  AccountSummary,
+  CookieMap,
+  ProxySettings,
+} from "../domain/accounts.js";
 import type { AccountStatus } from "../domain/accounts.js";
 import { StateDatabase } from "./database.js";
 import { rowToAccount } from "./account-row.js";
@@ -108,6 +114,20 @@ export class AccountRepository {
     return this.database.all("SELECT * FROM accounts ORDER BY id").map(rowToAccount);
   }
 
+  public delete(username: string): boolean {
+    return this.database.run("DELETE FROM accounts WHERE username=?", username).changes === 1;
+  }
+
+  public setProxy(username: string, proxy?: string | ProxySettings): boolean {
+    return (
+      this.database.run(
+        "UPDATE accounts SET proxy_json=? WHERE username=?",
+        proxy === undefined ? null : JSON.stringify(proxy),
+        username,
+      ).changes === 1
+    );
+  }
+
   public summary(): AccountSummary {
     const now = Date.now();
     const rows = this.list();
@@ -118,6 +138,10 @@ export class AccountRepository {
       unusable: rows.filter((row) => row.status === 0).length,
       coolingDown: rows.filter((row) => row.status === 2 && (row.availableUntil ?? 0) > now).length,
     };
+  }
+
+  public eligible(account: AccountRecord, now = Date.now()): boolean {
+    return this.isEligible(account, now, false, true);
   }
 
   public lease(
@@ -213,6 +237,35 @@ export class AccountRepository {
         username,
       ).changes;
     }
+    return changed;
+  }
+
+  public clearLeases(expiredOnly = true): number {
+    const now = Date.now();
+    return expiredOnly
+      ? this.database.run(
+          "UPDATE accounts SET lease_id=NULL, lease_expires_at=NULL WHERE lease_id IS NOT NULL AND lease_expires_at<=?",
+          now,
+        ).changes
+      : this.database.run(
+          "UPDATE accounts SET lease_id=NULL, lease_expires_at=NULL WHERE lease_id IS NOT NULL",
+        ).changes;
+  }
+
+  public resetDailyUsage(usernames?: readonly string[]): number {
+    const today = utcDate();
+    if (!usernames || usernames.length === 0)
+      return this.database.run(
+        "UPDATE accounts SET daily_requests=0, daily_tweets=0, last_reset_date=?",
+        today,
+      ).changes;
+    let changed = 0;
+    for (const username of usernames)
+      changed += this.database.run(
+        "UPDATE accounts SET daily_requests=0, daily_tweets=0, last_reset_date=? WHERE username=?",
+        today,
+        username,
+      ).changes;
     return changed;
   }
 

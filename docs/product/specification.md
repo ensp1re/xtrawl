@@ -30,9 +30,14 @@ persisting progress locally, and exposing predictable typed results.
 
 - Read-only search, single-post lookup, user lookup, profile timelines, followers, following, and verified-followers endpoints.
 - Cookie authentication using `auth_token` plus CSRF cookie, with token-only bootstrap when the platform supplies the CSRF cookie.
-- Per-account leases, daily request/tweet counters, cooldown classification, retry/backoff, and bounded concurrency.
+- Per-page account leases with heartbeat, accurate request/tweet counters, cooldown classification,
+  retry/backoff, account switching, and bounded concurrency.
+- Default 30-day search bounds, concurrent interval splitting, URL/handle/user-ID normalization, and
+  no-progress pagination stops.
 - Local SQLite state, resumable cursors, CSV/JSON output, structured CLI, and async library methods.
 - Local manifest fallback and optional live manifest refresh for rotating GraphQL identifiers.
+- Optional transaction-header generation, HTTP/HTTPS/SOCKS5 proxies with preflight checks, appendable
+  descriptive outputs, and redacted local-state maintenance APIs.
 - Strict TypeScript interfaces, runtime guards at external boundaries, and test doubles for all network paths.
 
 ## Explicit exclusions

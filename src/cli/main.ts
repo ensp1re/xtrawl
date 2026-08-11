@@ -4,8 +4,10 @@ import { HELP } from "./help.js";
 import { collectionOptionsFromCli, parseArgs, searchRequestFromCli, CliUsageError } from "./parser.js";
 
 export async function runCli(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  let verbose = false;
   try {
     const args = parseArgs(argv);
+    verbose = args.verbose;
     if (!args.command) {
       console.log(HELP);
       return 0;
@@ -22,6 +24,10 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
       manifestScrapeOnInit: args.manifestScrapeOnInit,
     });
     try {
+      if (verbose)
+        console.error(
+          `[xtrawl] accounts=${client.poolSummary.total} eligible=${client.poolSummary.eligible} concurrency=${client.config.concurrency}`,
+        );
       let result: unknown;
       if (args.command === "search")
         result = await client.search(args.values[0] ?? "", searchRequestFromCli(args));
@@ -29,7 +35,8 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
         const tweets = [];
         for (const value of args.values) tweets.push(await client.getTweet(value));
         result = tweets;
-      } else if (args.command === "user-info") result = await client.getUserInfo(args.values);
+      } else if (args.command === "user-info")
+        result = await client.getUserInfo(args.values, collectionOptionsFromCli(args));
       else if (args.command === "profile-tweets")
         result = await client.getProfileTweets(args.values, collectionOptionsFromCli(args));
       else
@@ -50,7 +57,13 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
       console.error(HELP);
       return 2;
     }
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(
+      verbose && error instanceof Error
+        ? (error.stack ?? error.message)
+        : error instanceof Error
+          ? error.message
+          : String(error),
+    );
     return 1;
   }
 }

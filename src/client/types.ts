@@ -1,5 +1,5 @@
 import type { ConfigInput, ClientConfig } from "../config/types.js";
-import type { AccountInput, AccountRecord } from "../domain/accounts.js";
+import type { AccountInput } from "../domain/accounts.js";
 import type { TransactionIdSource } from "../transport/transaction-id.js";
 import type { SessionFactory } from "../domain/http.js";
 
@@ -18,5 +18,5 @@ export interface ClientOptions extends ConfigInput {
 
 export interface ClientInspection {
   readonly config: ClientConfig;
-  readonly accounts: readonly AccountRecord[];
+  readonly accounts: readonly Record<string, unknown>[];
 }

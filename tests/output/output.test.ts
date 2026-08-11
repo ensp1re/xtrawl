@@ -70,4 +70,14 @@ describe("output writers", () => {
     expect(() => readFileSync(join(root, "empty.json"))).toThrow();
     expect(() => readFileSync(join(root, "empty.csv"))).toThrow();
   });
+
+  test("omits raw relationship payloads from CSV while retaining them in JSON", async () => {
+    const root = mkdtempSync(join(tmpdir(), "xtrawl-output-"));
+    await saveRows("followers", [{ userId: "1", username: "demo", raw: { private: "nested" } }], {
+      directory: root,
+      format: "both",
+    });
+    expect(readFileSync(join(root, "followers.csv"), "utf8")).not.toContain("private");
+    expect(readFileSync(join(root, "followers.json"), "utf8")).toContain("private");
+  });
 });

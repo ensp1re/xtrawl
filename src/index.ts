@@ -1,4 +1,6 @@
 export { XTrawl } from "./client/client.js";
+export { XTrawlDatabase } from "./client/database.js";
+export type { AccountImportOptions, AccountListOptions } from "./client/database.js";
 export type { ClientOptions } from "./client/types.js";
 export type { ClientConfig, ConfigInput } from "./config/types.js";
 export { validateConfig } from "./config/validation.js";
@@ -24,6 +26,7 @@ export type {
   ProfileTimelineRequest,
   SearchRequest,
   TargetInput,
+  UserInfoRequest,
   FollowType,
   TweetType,
 } from "./domain/requests.js";
@@ -49,6 +52,7 @@ export {
 } from "./auth/loaders.js";
 export { normalizeAccountRecord } from "./auth/records.js";
 export { normalizeSearch, buildEffectiveQuery } from "./query/normalize.js";
+export { normalizeTargets, targetFromString } from "./query/targets.js";
 export { queryHash } from "./query/hash.js";
 export { createManifest } from "./manifest/model.js";
 export { DEFAULT_MANIFEST } from "./manifest/default-manifest.js";

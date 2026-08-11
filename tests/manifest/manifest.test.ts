@@ -3,6 +3,7 @@ import { DEFAULT_MANIFEST } from "../../src/manifest/default-manifest.js";
 import { createManifest } from "../../src/manifest/model.js";
 import {
   extractManifestFromJavascript,
+  extractOperationFeaturesFromJavascript,
   extractOperationQueryIdsFromJavascript,
   scrapeManifestFromWeb,
 } from "../../src/manifest/scraper.js";
@@ -27,6 +28,17 @@ describe("manifest management", () => {
       extractOperationQueryIdsFromJavascript('operationName:"TweetResultByRestId",queryId:"new-tweet"')
         .tweet_result,
     ).toBe("new-tweet");
+  });
+
+  test("extracts operation feature switches from current bundles", () => {
+    const source =
+      'operationName:"SearchTimeline",queryId:"id",metadata:{featureSwitches:["feature_one","feature_two"]}';
+    expect(extractOperationFeaturesFromJavascript(source)).toEqual({
+      search_timeline: { feature_one: false, feature_two: false },
+    });
+    expect(
+      extractManifestFromJavascript(source, DEFAULT_MANIFEST).operationFeatures?.search_timeline,
+    ).toMatchObject({ feature_one: false, feature_two: false });
   });
 
   test("scrapes an authenticated main bundle and requires real operation matches", async () => {
@@ -94,6 +106,25 @@ describe("manifest management", () => {
     expect((await provider.getManifest()).queryIds.search_timeline).toBe(
       DEFAULT_MANIFEST.queryIds.search_timeline,
     );
+    storage.database.close();
+  });
+
+  test("forces the configured remote manifest refresh on first use", async () => {
+    const storage = openStorage(":memory:");
+    const url = "https://manifest.test/current";
+    storage.manifests.set(url, { ...DEFAULT_MANIFEST, version: "cached" }, 60_000);
+    let calls = 0;
+    const provider = new ManifestProvider(
+      validateConfig({ manifestUrl: url, manifestUpdateOnInit: true }),
+      storage.manifests,
+      async () => {
+        calls += 1;
+        return { ...DEFAULT_MANIFEST, version: "fresh" };
+      },
+    );
+    expect((await provider.getManifest()).version).toBe("fresh");
+    expect((await provider.getManifest()).version).toBe("fresh");
+    expect(calls).toBe(1);
     storage.database.close();
   });
 });

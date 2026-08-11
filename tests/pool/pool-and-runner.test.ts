@@ -1,6 +1,6 @@
 import { accountInputToRecord } from "../../src/auth/records.js";
 import { validateConfig } from "../../src/config/validation.js";
-import { RateLimitError } from "../../src/domain/errors.js";
+import { AuthError, RateLimitError } from "../../src/domain/errors.js";
 import { AccountPool } from "../../src/pool/account-pool.js";
 import { TokenBucketLimiter } from "../../src/pool/limiter.js";
 import { ExecutionRunner, TaskQueue } from "../../src/runner/index.js";
@@ -50,6 +50,82 @@ describe("account pool and limits", () => {
       }),
     ).rejects.toThrow(RateLimitError);
     expect(storage.accounts.findByUsername("one")?.status).toBe(2);
+    storage.database.close();
+  });
+
+  test("counts failed requests and switches accounts for a retry", async () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(readyAccount());
+    storage.accounts.upsert(
+      accountInputToRecord({
+        username: "two",
+        authToken: "auth-two",
+        csrfToken: "csrf-two",
+        cookies: { auth_token: "auth-two", ct0: "csrf-two" },
+      }),
+    );
+    const config = validateConfig({
+      cooldownJitterMs: 0,
+      minDelayMs: 0,
+      retryBaseMs: 0,
+      retryMaxMs: 0,
+      maxTaskAttempts: 2,
+    });
+    const pool = new AccountPool(
+      storage.accounts,
+      new SessionBuilder({
+        bearerToken: "bearer",
+        factory: (options) => sessionFactory(() => response({}))(options),
+      }),
+      config,
+    );
+    const attempts: string[] = [];
+    const result = await pool.execute("retry", async ({ account }) => {
+      attempts.push(account.username);
+      if (attempts.length === 1) throw new RateLimitError("limited", { statusCode: 429 });
+      return { tweets: [{ tweetId: "1" }] };
+    });
+    expect(result.tweets).toHaveLength(1);
+    expect(attempts).toEqual(["one", "two"]);
+    expect(storage.accounts.findByUsername("one")?.dailyRequests).toBe(1);
+    expect(storage.accounts.findByUsername("two")?.dailyRequests).toBe(1);
+    storage.database.close();
+  });
+
+  test("repairs an authenticated session before retrying", async () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(readyAccount());
+    const config = validateConfig({
+      cooldownJitterMs: 0,
+      minDelayMs: 0,
+      retryBaseMs: 0,
+      retryMaxMs: 0,
+      maxTaskAttempts: 2,
+    });
+    let repairs = 0;
+    let attempts = 0;
+    const pool = new AccountPool(
+      storage.accounts,
+      new SessionBuilder({
+        bearerToken: "bearer",
+        factory: (options) => sessionFactory(() => response({}))(options),
+      }),
+      config,
+      async (account) => {
+        repairs += 1;
+        storage.accounts.upsert({ ...account, status: 1, availableUntil: 0 });
+        return true;
+      },
+    );
+    await expect(
+      pool.execute("repair", async () => {
+        attempts += 1;
+        if (attempts === 1) throw new AuthError("expired", { statusCode: 401 });
+        return true;
+      }),
+    ).resolves.toBe(true);
+    expect(repairs).toBe(1);
+    expect(attempts).toBe(2);
     storage.database.close();
   });
 

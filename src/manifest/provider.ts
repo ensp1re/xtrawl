@@ -9,6 +9,7 @@ import type { ManifestScrapeOptions } from "./scraper.js";
 
 export class ManifestProvider {
   private liveManifest?: Manifest;
+  private remoteRefreshAttempted = false;
 
   public constructor(
     private readonly config: ClientConfig,
@@ -28,13 +29,19 @@ export class ManifestProvider {
       return this.live(local, false);
     }
     if (this.config.manifestUrl) {
+      if (this.config.manifestUpdateOnInit && !this.remoteRefreshAttempted) {
+        this.remoteRefreshAttempted = true;
+        try {
+          return await this.fetchRemote(this.config.manifestUrl);
+        } catch {
+          const stale = this.repository.get(this.config.manifestUrl, true);
+          if (stale) return createManifest(stale);
+        }
+      }
       const cached = this.repository.get(this.config.manifestUrl);
       if (cached) return createManifest(cached);
       try {
-        const remote = await this.remoteFetch(this.config.manifestUrl);
-        const payload = normalizePayload(remote);
-        this.repository.set(this.config.manifestUrl, payload, this.config.manifestTtlMs);
-        return createManifest(payload);
+        return await this.fetchRemote(this.config.manifestUrl);
       } catch {
         const stale = this.repository.get(this.config.manifestUrl, true);
         if (stale) return createManifest(stale);
@@ -45,6 +52,13 @@ export class ManifestProvider {
 
   public async refreshLive(authToken?: string): Promise<Manifest> {
     return this.live(createManifest(DEFAULT_MANIFEST), true, authToken);
+  }
+
+  private async fetchRemote(url: string): Promise<Manifest> {
+    const remote = await this.remoteFetch(url);
+    const payload = normalizePayload(remote);
+    this.repository.set(url, payload, this.config.manifestTtlMs);
+    return createManifest(payload);
   }
 
   private async live(local: Manifest, strict: boolean, authToken?: string): Promise<Manifest> {

@@ -2,6 +2,7 @@ import type { GraphqlResponse, HttpSession } from "../domain/http.js";
 import { AuthError, NetworkError, RateLimitError } from "../domain/errors.js";
 import { isRecord } from "../utils/guards.js";
 import type { TransactionIdProvider } from "./transaction-id.js";
+import { effectiveStatus, parseRateLimitReset } from "../pool/cooldown.js";
 
 export class GraphqlTransport {
   public constructor(private readonly transactions: TransactionIdProvider) {}
@@ -27,6 +28,7 @@ export class GraphqlTransport {
             ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
           }));
       const body = await response.text();
+      const responseStatus = effectiveStatus(response.status, response.headers);
       const snippet = body.slice(0, 240);
       let data: unknown = null;
       if (response.status === 200) {
@@ -36,18 +38,19 @@ export class GraphqlTransport {
           data = null;
         }
       }
-      if (response.status === 401 || response.status === 403) {
-        throw new AuthError("Remote session was rejected.", { statusCode: response.status, endpoint: url });
+      if (responseStatus === 401 || responseStatus === 403) {
+        throw new AuthError("Remote session was rejected.", { statusCode: responseStatus, endpoint: url });
       }
-      if (response.status === 429) {
+      if (responseStatus === 429) {
         throw new RateLimitError("Remote rate limit was returned.", {
-          statusCode: response.status,
+          statusCode: responseStatus,
           endpoint: url,
+          resetAt: parseRateLimitReset(response.headers),
         });
       }
-      if (response.status >= 400) {
-        throw new NetworkError(`GraphQL request failed with status ${response.status}.`, {
-          statusCode: response.status,
+      if (responseStatus >= 400) {
+        throw new NetworkError(`GraphQL request failed with status ${responseStatus}.`, {
+          statusCode: responseStatus,
           endpoint: url,
         });
       }
@@ -56,7 +59,7 @@ export class GraphqlTransport {
         throw new AuthError("Remote session was rejected.", { statusCode: mapped, endpoint: url });
       if (mapped === 429)
         throw new RateLimitError("Remote rate limit was returned.", { statusCode: mapped, endpoint: url });
-      return { data, status: mapped ?? response.status, headers: response.headers, snippet };
+      return { data, status: mapped ?? responseStatus, headers: response.headers, snippet };
     } catch (error) {
       if (error instanceof AuthError || error instanceof RateLimitError) throw error;
       if (error instanceof Error && error.name === "AbortError")

@@ -29,4 +29,8 @@ export class CheckpointRepository {
   public clear(queryHash: string): boolean {
     return this.database.run("DELETE FROM checkpoints WHERE query_hash=?", queryHash).changes === 1;
   }
+
+  public clearAll(): number {
+    return this.database.run("DELETE FROM checkpoints").changes;
+  }
 }

@@ -1,35 +1,37 @@
 import type { ClientConfig } from "../config/types.js";
 import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import { validateConfig } from "../config/validation.js";
-import type { AccountRecord } from "../domain/accounts.js";
+import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
 import type { FollowRecord, ProfileRecord, SearchResult, TweetRecord } from "../domain/records.js";
 import type {
   FollowsRequest,
   ProfileTimelineRequest,
   SearchRequest,
   TargetInput,
+  UserInfoRequest,
 } from "../domain/requests.js";
-import { AccountPoolExhausted, ConfigError, RunFailed } from "../domain/errors.js";
-import { mapProfile } from "../engine/extractors.js";
+import { ConfigError } from "../domain/errors.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
 import { bootstrapCookiesFromAuthToken } from "../auth/bootstrap.js";
 import { ManifestProvider } from "../manifest/provider.js";
-import { queryHash } from "../query/hash.js";
 import { AccountPool } from "../pool/account-pool.js";
-import { saveRows } from "../output/writer.js";
 import { openStorage, type StorageBundle } from "../storage/index.js";
 import { GraphqlTransport } from "../transport/graphql.js";
 import { SessionBuilder } from "../transport/session.js";
 import { TransactionIdProvider } from "../transport/transaction-id.js";
-import { targetUsername } from "../query/builder.js";
+import { normalizeTargets } from "../query/targets.js";
 import { collectFollows, collectProfileTweets, type CollectionContext } from "./collectors.js";
+import { collectSearch } from "./search.js";
+import { collectProfiles } from "./profiles.js";
 import type { ClientInspection, ClientOptions } from "./types.js";
+import { XTrawlDatabase } from "./database.js";
 
 export class XTrawl {
   public readonly config: ClientConfig;
   public readonly storage: StorageBundle;
+  public readonly db: XTrawlDatabase;
   private readonly pool: AccountPool;
   private readonly engine: ApiEngine;
 
@@ -40,6 +42,7 @@ export class XTrawl {
       dailyTweetsLimit: this.config.dailyTweetsLimit,
       leaseTtlMs: this.config.leaseTtlMs,
     });
+    this.db = new XTrawlDatabase(this.storage);
     this.provision(options);
     const manifestAccount = this.storage.accounts.list().find((account) => Boolean(account.authToken));
     const manifests = new ManifestProvider(
@@ -48,14 +51,32 @@ export class XTrawl {
       undefined,
       manifestAccount?.authToken,
     );
-    const transactions = new TransactionIdProvider(options.transactionIdSource);
+    const transactions = new TransactionIdProvider(options.transactionIdSource, {
+      enabled:
+        this.config.transactionIdEnabled && (!options.sessionFactory || Boolean(options.transactionIdSource)),
+      ttlMs: this.config.transactionIdTtlMs,
+    });
     const sessions = new SessionBuilder({
       bearerToken: this.config.bearerToken,
       ...(this.config.proxy ? { defaultProxy: this.config.proxy } : {}),
       ...(this.config.apiUserAgent ? { userAgent: this.config.apiUserAgent } : {}),
+      httpMode: this.config.apiHttpMode,
+      ...(this.config.apiHttpImpersonate ? { impersonate: this.config.apiHttpImpersonate } : {}),
       ...(options.sessionFactory ? { factory: options.sessionFactory } : {}),
     });
-    this.pool = new AccountPool(this.storage.accounts, sessions, this.config);
+    this.pool = new AccountPool(this.storage.accounts, sessions, this.config, async (account) => {
+      if (!account.authToken) return false;
+      const cookies = await bootstrapCookiesFromAuthToken(account.authToken, undefined, account.proxy);
+      if (!cookies?.ct0) return false;
+      this.storage.accounts.upsert({
+        ...account,
+        status: 1,
+        availableUntil: 0,
+        csrfToken: cookies.ct0,
+        cookies: { ...account.cookies, ...cookies },
+      });
+      return true;
+    });
     this.engine = new ApiEngine(this.config, manifests, new GraphqlTransport(transactions));
   }
 
@@ -66,69 +87,15 @@ export class XTrawl {
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
-    const request: SearchRequest = { ...options, ...(query ? { searchQuery: query } : {}) };
-    const hash = queryHash({ operation: "search", request });
-    const run = this.storage.runs.create("search", hash);
-    try {
-      const saved = request.resume ? this.storage.checkpoints.get(hash) : undefined;
-      const tweets = await this.pool.execute("search", async ({ session }) => {
-        const collected: TweetRecord[] = [];
-        let cursor = saved?.root;
-        let emptyPages = 0;
-        while (true) {
-          const page = await this.engine.search(session, request, cursor);
-          const remaining =
-            request.limit === undefined
-              ? page.tweets
-              : page.tweets.slice(0, Math.max(0, request.limit - collected.length));
-          collected.push(...remaining);
-          emptyPages = page.tweets.length === 0 ? emptyPages + 1 : 0;
-          if (
-            shouldStop(
-              request.limit,
-              collected.length,
-              page.cursor,
-              emptyPages,
-              request.maxEmptyPages ?? this.config.maxEmptyPages,
-            )
-          )
-            break;
-          if (!page.cursor) break;
-          cursor = page.cursor;
-          this.storage.checkpoints.save(hash, { root: page.cursor });
-        }
-        return collected;
-      });
-      const result: SearchResult = { tweets, stats: stats(tweets.length, 1) };
-      await this.saveIfRequested("search", result.tweets, request);
-      this.storage.checkpoints.clear(hash);
-      this.storage.runs.finalize(run.id, "complete");
-      return result;
-    } catch (error) {
-      this.storage.runs.finalize(
-        run.id,
-        "failed",
-        error instanceof Error ? { name: error.name, message: error.message } : error,
-      );
-      if (error instanceof AccountPoolExhausted) throw error;
-      throw error instanceof RunFailed
-        ? error
-        : new RunFailed(error instanceof Error ? error.message : String(error));
-    }
+    return collectSearch(this.collectionContext(), query, options);
   }
 
-  public async getUserInfo(targets: readonly (string | TargetInput)[]): Promise<readonly ProfileRecord[]> {
-    const normalized = targets.map(toTarget);
-    return this.pool.execute("user-info", async ({ session }) => {
-      const records: ProfileRecord[] = [];
-      for (const target of normalized) {
-        const username = targetUsername(target);
-        if (!username) continue;
-        const user = await this.engine.lookupUser(session, username);
-        records.push(mapProfile(user, target, username));
-      }
-      return records;
-    });
+  public async getUserInfo(
+    targets: readonly (string | TargetInput)[],
+    options: UserInfoRequest = {},
+  ): Promise<readonly ProfileRecord[]> {
+    const normalized = normalizeTargets(targets).targets;
+    return collectProfiles(this.collectionContext(), normalized, options);
   }
 
   public async getTweet(target: string): Promise<TweetRecord | undefined> {
@@ -141,15 +108,16 @@ export class XTrawl {
     targets: readonly (string | TargetInput)[],
     options: Omit<ProfileTimelineRequest, "targets"> = {},
   ): Promise<SearchResult> {
-    return collectProfileTweets(this.collectionContext(), targets.map(toTarget), options);
+    return collectProfileTweets(this.collectionContext(), normalizeTargets(targets).targets, options);
   }
 
   public async getFollowers(
     targets: readonly (string | TargetInput)[],
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
-    return collectFollows(this.collectionContext(), targets.map(toTarget), {
-      targets: targets.map(toTarget),
+    const normalized = normalizeTargets(targets).targets;
+    return collectFollows(this.collectionContext(), normalized, {
+      targets: normalized,
       ...options,
       followType: "followers",
     });
@@ -159,8 +127,9 @@ export class XTrawl {
     targets: readonly (string | TargetInput)[],
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
-    return collectFollows(this.collectionContext(), targets.map(toTarget), {
-      targets: targets.map(toTarget),
+    const normalized = normalizeTargets(targets).targets;
+    return collectFollows(this.collectionContext(), normalized, {
+      targets: normalized,
       ...options,
       followType: "following",
     });
@@ -170,15 +139,27 @@ export class XTrawl {
     targets: readonly (string | TargetInput)[],
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
-    return collectFollows(this.collectionContext(), targets.map(toTarget), {
-      targets: targets.map(toTarget),
+    const normalized = normalizeTargets(targets).targets;
+    return collectFollows(this.collectionContext(), normalized, {
+      targets: normalized,
       ...options,
       followType: "verified_followers",
     });
   }
 
   public inspect(): ClientInspection {
-    return { config: this.config, accounts: this.storage.accounts.list() };
+    return {
+      config: {
+        ...this.config,
+        bearerToken: "[redacted]",
+        ...(this.config.proxy ? { proxy: redactProxy(this.config.proxy) } : {}),
+      },
+      accounts: this.db.listAccounts(),
+    };
+  }
+
+  public get poolSummary() {
+    return this.pool.summary;
   }
 
   public close(): void {
@@ -187,14 +168,6 @@ export class XTrawl {
 
   private collectionContext(): CollectionContext {
     return { config: this.config, pool: this.pool, engine: this.engine, storage: this.storage };
-  }
-
-  private async saveIfRequested(name: string, rows: readonly unknown[], options: SaveOptions): Promise<void> {
-    if (!options.save) return;
-    await saveRows(options.saveName ?? name, rows, {
-      directory: options.saveDir ?? this.config.saveDir,
-      format: options.saveFormat ?? this.config.saveFormat,
-    });
   }
 
   private provision(options: ClientOptions): void {
@@ -221,7 +194,7 @@ export class XTrawl {
   private async bootstrapMissingAccounts(): Promise<void> {
     for (const account of this.storage.accounts.list()) {
       if (!account.authToken || account.csrfToken) continue;
-      const cookies = await bootstrapCookiesFromAuthToken(account.authToken);
+      const cookies = await bootstrapCookiesFromAuthToken(account.authToken, undefined, account.proxy);
       if (cookies?.ct0)
         this.storage.accounts.upsert({
           ...account,
@@ -232,10 +205,20 @@ export class XTrawl {
   }
 }
 
-function toTarget(value: string | TargetInput): TargetInput {
-  return typeof value === "string"
-    ? { raw: value, username: value.replace(/^@/u, ""), source: "input" }
-    : value;
+function redactProxy(proxy: string | ProxySettings): string | ProxySettings {
+  if (typeof proxy !== "string")
+    return {
+      ...proxy,
+      ...(proxy.password ? { password: "[redacted]" } : {}),
+    };
+  try {
+    const value = new URL(proxy.includes("://") ? proxy : `http://${proxy}`);
+    if (value.username) value.username = "[redacted]";
+    if (value.password) value.password = "[redacted]";
+    return value.toString();
+  } catch {
+    return "[redacted]";
+  }
 }
 
 function tweetIdFromTarget(value: string): string | undefined {
@@ -246,19 +229,3 @@ function tweetIdFromTarget(value: string): string | undefined {
   );
   return match?.[1];
 }
-
-function shouldStop(
-  limit: number | undefined,
-  total: number,
-  cursor: string | undefined,
-  empty: number,
-  maxEmpty: number,
-): boolean {
-  return Boolean((limit !== undefined && total >= limit) || !cursor || empty >= maxEmpty);
-}
-
-function stats(tweetsCount: number, tasksTotal: number): SearchResult["stats"] {
-  return { tweetsCount, tasksTotal, tasksDone: tasksTotal, tasksFailed: 0, retries: 0 };
-}
-
-type SaveOptions = Pick<SearchRequest, "save" | "saveDir" | "saveFormat" | "saveName">;

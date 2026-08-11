@@ -15,10 +15,10 @@ Global options:
   --cookies-file PATH      JSON or delimited account source
   --env-file PATH          dotenv account source
   --db-path PATH           SQLite state path
-  --proxy URL              HTTP proxy
+  --proxy URL              HTTP(S) or SOCKS5 proxy
   --concurrency N          configured worker count
   --manifest-scrape-on-init refresh live operation identifiers
-  --verbose                enable verbose diagnostics
+  --verbose, -v            enable redacted diagnostics
 
 Common options:
   --limit N                cap returned records

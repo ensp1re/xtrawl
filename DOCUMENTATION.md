@@ -19,6 +19,7 @@ the command line. XTrawl is an authenticated, read-only collector for public X d
 - [Handle errors](#handle-errors)
 - [Refresh operation identifiers](#refresh-operation-identifiers)
 - [Understand storage and account health](#understand-storage-and-account-health)
+- [Manage local state](#manage-local-state)
 - [Protect credentials and collected data](#protect-credentials-and-collected-data)
 - [Troubleshoot common problems](#troubleshoot-common-problems)
 - [Know the limitations](#know-the-limitations)
@@ -177,7 +178,9 @@ const client = await XTrawl.create({
 ```
 
 An account record may define its own `proxy`; that account-level value takes precedence for its
-session. Keep proxy credentials in secret storage, not in committed configuration.
+session. HTTP, HTTPS, and SOCKS5 URLs are supported. Before leasing a proxied account, XTrawl performs
+a short unauthenticated health request through that proxy and caches a successful result for one
+minute. Keep proxy credentials in secret storage, not in committed configuration.
 
 ## Use the TypeScript API
 
@@ -245,7 +248,9 @@ console.log(result.stats);
 ```
 
 The first argument is the free-form search query. Typed options are normalized into X search
-operators and combined with that query.
+operators and combined with that query. If neither date bound is supplied, XTrawl searches the
+previous 30 days. A bounded interval is split into up to `searchSplits` tasks and processed with the
+available account concurrency.
 
 ### Read profile information
 
@@ -258,6 +263,15 @@ const profiles = await client.getUserInfo([
 ```
 
 Each resolvable public target returns a normalized `ProfileRecord`.
+
+Profile information can also be saved:
+
+```ts
+await client.getUserInfo(["OpenAI", "github"], {
+  save: true,
+  saveFormat: "both",
+});
+```
 
 ### Read one post
 
@@ -314,8 +328,8 @@ console.log(inspection.config);
 console.log(inspection.accounts);
 ```
 
-`inspect()` reports the validated configuration and stored account records. Treat the result as
-sensitive because provisioned account records may contain authentication material.
+`inspect()` reports the validated configuration and redacted account projections. Tokens, cookie
+values, passwords, email addresses, bearer overrides, and proxy credentials are not returned.
 
 ## Search filters
 
@@ -389,9 +403,10 @@ Put these before the command:
 | `--cookies-file` | path | Load accounts or cookies from a file |
 | `--env-file` | path | Load account values from a dotenv file |
 | `--db-path` | path | Choose the SQLite state file |
-| `--proxy` | URL | Set the default HTTP proxy |
+| `--proxy` | URL | Set the default HTTP(S) or SOCKS5 proxy |
 | `--concurrency` | positive integer | Set the configured worker count |
 | `--manifest-scrape-on-init` | flag | Enable live operation-identifier refresh with local fallback |
+| `--verbose`, `-v` | flag | Print redacted pool diagnostics and full error stacks |
 | `--help` | flag | Print CLI help |
 
 Example:
@@ -422,7 +437,7 @@ npm run cli -- \
 | `--min-likes`, `--min-replies`, `--min-retweets` | Engagement thresholds |
 | `--limit`, `--max-empty-pages` | Pagination stop conditions |
 
-Repeat list options to add more values:
+Repeat list options or place multiple values after one list option:
 
 ```bash
 npm run cli -- search "release" \
@@ -448,6 +463,7 @@ npm run cli -- search "release" \
 | `--save-format csv\|json\|both` | Select output formats |
 | `--save-dir` | Select the output directory |
 | `--save-name` | Select the output filename without an extension |
+| `--raw-json` | Include raw user payloads in relationship JSON output |
 
 All commands accept `--pretty` after the command to print indented JSON to stdout. Without
 `--pretty`, use `--save` when you need file output.
@@ -492,7 +508,7 @@ exports/typescript-posts.json
 ```
 
 Without overrides, the directory is `outputs`, the format is `csv`, and the base name reflects the
-operation, such as `search`, `profile_tweets`, or `followers`.
+query/date range or operation targets. Existing CSV and JSON files are appended instead of replaced.
 
 JSON preserves the normalized records. Tweet CSV output flattens the common post fields, including
 the post ID, timestamp, author, text, engagement counts, URL, and media links.
@@ -503,19 +519,32 @@ Pass configuration fields to `XTrawl.create()` or the constructor. Common defaul
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `dbPath` | `graph_state.db` | SQLite account and run state |
+| `dbPath` | `xtrawl_state.db` | SQLite account and run state |
 | `concurrency` | `5` | Configured worker count |
 | `saveDir` | `outputs` | File output directory |
 | `saveFormat` | `csv` | File output format |
 | `apiPageSize` | `20` | Requested records per API page |
+| `searchSplits` | `5` | Maximum date intervals per search |
+| `schedulerMinIntervalMs` | `300000` | Smallest search interval |
 | `maxEmptyPages` | `1` | Consecutive empty-page stop threshold |
 | `dailyRequestsLimit` | `30` | Per-account daily operation guard |
 | `dailyTweetsLimit` | `600` | Per-account daily collected-post guard |
 | `cooldownDefaultMs` | `120000` | Default rate-limit cooldown |
 | `transientCooldownMs` | `120000` | Network and transient cooldown |
 | `leaseTtlMs` | `120000` | Account lease lifetime |
+| `leaseHeartbeatMs` | `30000` | Active lease renewal interval |
+| `requestsPerMinute` | `30` | Per-account token-bucket rate |
+| `minDelayMs` | `2000` | Minimum spacing between account requests |
+| `maxTaskAttempts` | `3` | Attempts for a failed page request |
+| `maxAccountSwitches` | `2` | Account changes allowed within one page request |
+| `proxyCheckOnLease` | `true` | Check a configured proxy before use |
+| `proxyCheckTimeoutMs` | `10000` | Proxy health-check timeout |
 | `manifestTtlMs` | `3600000` | Cached remote manifest lifetime |
+| `manifestUpdateOnInit` | `false` | Force configured manifest URL refresh on first use |
 | `manifestScrapeOnInit` | `false` | Enable live operation-identifier refresh |
+| `transactionIdEnabled` | `true` | Generate current web transaction headers when possible |
+| `transactionIdTtlMs` | `21600000` | Reuse transaction bootstrap material for six hours |
+| `strict` | `false` | Fail a multi-target run when any task fails |
 
 Limits are local safeguards, not statements about the platform's actual limits. XTrawl validates
 configuration before opening a live operation; positive fields must be valid positive numbers and
@@ -636,6 +665,30 @@ leased, is not cooling down, and remains within configured local limits. After t
 SQLite coordinates account leases so separate work does not intentionally use the same stored
 account at the same time.
 
+## Manage local state
+
+`client.db` provides scoped operational maintenance without exposing the storage implementation:
+
+```ts
+console.log(client.db.accountsSummary());
+console.log(client.db.listAccounts({ eligibleOnly: true }));
+
+client.db.setAccountProxy("collector-one", "socks5://127.0.0.1:1080");
+await client.db.repairAccount("collector-one", true);
+client.db.resetAccountCooldowns(["collector-one"], true);
+client.db.clearLeases(true);
+client.db.resetDailyCounters();
+
+console.log(client.db.lastRun());
+console.log(client.db.runsSummary());
+client.db.clearAllCheckpoints();
+```
+
+Account listings are redacted by default. `importAccounts()` accepts the same inline and file inputs
+as client provisioning. `deleteAccount(username)` deletes only the named row.
+`collapseDuplicateAccounts()` reports what it would remove; pass `false` only when you explicitly
+want to merge and delete duplicate token rows.
+
 ## Protect credentials and collected data
 
 Treat the following as sensitive:
@@ -651,7 +704,7 @@ Follow these rules:
 2. Never commit `.env` files, account files, SQLite databases, or real response fixtures.
 3. Use dedicated accounts that you own or are explicitly authorized to operate.
 4. Restrict filesystem permissions and retention for state and output files.
-5. Do not expose error diagnostics or `inspect()` output to untrusted users.
+5. Keep even redacted diagnostics and `inspect()` output within trusted operational tooling.
 6. Collect only what you need and follow platform terms and applicable law.
 
 XTrawl sends read-only HTTP requests. Its transport does not implement posting, replying, liking,

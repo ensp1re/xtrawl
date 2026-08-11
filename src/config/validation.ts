@@ -6,6 +6,48 @@ import type { ClientConfig, ConfigInput } from "./types.js";
 
 export type ApiHttpMode = "auto" | "async" | "sync";
 
+const CONFIG_KEYS = [
+  "dbPath",
+  "proxy",
+  "concurrency",
+  "saveDir",
+  "saveFormat",
+  "apiHttpMode",
+  "apiHttpImpersonate",
+  "apiUserAgent",
+  "dailyRequestsLimit",
+  "dailyTweetsLimit",
+  "maxEmptyPages",
+  "apiPageSize",
+  "searchSplits",
+  "schedulerMinIntervalMs",
+  "minDelayMs",
+  "leaseTtlMs",
+  "leaseHeartbeatMs",
+  "cooldownDefaultMs",
+  "transientCooldownMs",
+  "authCooldownMs",
+  "cooldownJitterMs",
+  "requestsPerMinute",
+  "retryBaseMs",
+  "retryMaxMs",
+  "maxTaskAttempts",
+  "maxFallbackAttempts",
+  "maxAccountSwitches",
+  "proxyCheckOnLease",
+  "proxyCheckUrl",
+  "proxyCheckTimeoutMs",
+  "profileTimelineAllowAnonymous",
+  "manifestUrl",
+  "manifestTtlMs",
+  "manifestUpdateOnInit",
+  "manifestScrapeOnInit",
+  "transactionIdEnabled",
+  "transactionIdTtlMs",
+  "strict",
+  "bearerToken",
+] as const satisfies readonly (keyof ClientConfig)[];
+
 export function normalizeProxyPayload(value: unknown): string | ProxySettings | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   if (typeof value === "string") {
@@ -37,7 +79,7 @@ export function normalizeProxyPayload(value: unknown): string | ProxySettings | 
 }
 
 export function validateConfig(input: ConfigInput = {}): ClientConfig {
-  const merged = { ...DEFAULT_CONFIG, ...input };
+  const merged = { ...DEFAULT_CONFIG, ...configOverrides(input) };
   const mode = merged.apiHttpMode ?? DEFAULT_CONFIG.apiHttpMode;
   if (mode !== "auto" && mode !== "async" && mode !== "sync") {
     throw new ConfigError(`Unsupported HTTP mode: ${String(mode)}`);
@@ -52,18 +94,31 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
     "dailyTweetsLimit",
     "maxEmptyPages",
     "apiPageSize",
+    "searchSplits",
+    "schedulerMinIntervalMs",
     "leaseTtlMs",
     "manifestTtlMs",
     "requestsPerMinute",
     "maxTaskAttempts",
     "maxFallbackAttempts",
+    "proxyCheckTimeoutMs",
+    "transactionIdTtlMs",
   ];
   for (const field of positiveFields) {
     if (!Number.isInteger(merged[field]) || Number(merged[field]) < 1) {
       throw new ConfigError(`${field} must be a positive integer`);
     }
   }
+  if (!Number.isInteger(merged.maxAccountSwitches) || merged.maxAccountSwitches < 0) {
+    throw new ConfigError("maxAccountSwitches must be a non-negative integer");
+  }
   if (merged.apiPageSize > 100) throw new ConfigError("apiPageSize must be at most 100");
+  try {
+    const proxyCheckUrl = new URL(merged.proxyCheckUrl);
+    if (proxyCheckUrl.protocol !== "http:" && proxyCheckUrl.protocol !== "https:") throw new Error();
+  } catch {
+    throw new ConfigError("proxyCheckUrl must be an HTTP(S) URL");
+  }
   if (
     merged.minDelayMs < 0 ||
     merged.leaseHeartbeatMs < 0 ||
@@ -80,7 +135,16 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
     ...merged,
     proxy,
     apiHttpMode: mode,
+    proxyCheckOnLease: asBoolean(merged.proxyCheckOnLease),
+    transactionIdEnabled: asBoolean(merged.transactionIdEnabled),
     strict: asBoolean(merged.strict),
     bearerToken: asString(merged.bearerToken) ?? DEFAULT_CONFIG.bearerToken,
   };
+}
+
+function configOverrides(input: ConfigInput): ConfigInput {
+  const entries = CONFIG_KEYS.flatMap((key) =>
+    input[key] === undefined ? [] : ([[key, input[key]]] as const),
+  );
+  return Object.fromEntries(entries) as ConfigInput;
 }

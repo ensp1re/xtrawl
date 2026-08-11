@@ -34,13 +34,13 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     concurrency: number;
     manifestScrapeOnInit: boolean;
     verbose: boolean;
-  } = { dbPath: "graph_state.db", concurrency: 5, manifestScrapeOnInit: false, verbose: false };
+  } = { dbPath: "xtrawl_state.db", concurrency: 5, manifestScrapeOnInit: false, verbose: false };
   let index = 0;
-  while (index < argv.length && argv[index]?.startsWith("--")) {
+  while (index < argv.length && (argv[index]?.startsWith("--") || argv[index] === "-v")) {
     const flag = argv[index];
     if (!flag) break;
     if (flag === "--help") return { ...global, values: [], options: {}, command: undefined };
-    if (flag === "--verbose") {
+    if (flag === "--verbose" || flag === "-v") {
       global.verbose = true;
       index += 1;
       continue;
@@ -85,23 +85,28 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       index += 1;
       continue;
     }
-    const [key, flagValue] = splitFlag(value, argv[index + 1]);
-    if (flagValue === "__flag__") options[key] = true;
-    else if (
-      key === "from" ||
-      key === "to" ||
-      key === "mention" ||
-      key === "all-words" ||
-      key === "any-words" ||
-      key === "exact-phrases" ||
-      key === "hashtags-any" ||
-      key === "hashtags-exclude" ||
-      key === "exclude-words"
-    ) {
+    const equals = value.indexOf("=");
+    const key = equals > 2 ? value.slice(2, equals) : value.slice(2);
+    if (!KNOWN_OPTIONS.has(key)) throw new CliUsageError(`Unknown command option: --${key}`);
+    if (BOOLEAN_OPTIONS.has(key)) {
+      if (equals > 2) throw new CliUsageError(`--${key} does not accept a value`);
+      options[key] = true;
+      index += 1;
+      continue;
+    }
+    if (LIST_OPTIONS.has(key)) {
+      const items = equals > 2 ? [value.slice(equals + 1)] : followingValues(argv, index + 1);
+      if (items.length === 0) throw new CliUsageError(`--${key} requires at least one value`);
       const existing = Array.isArray(options[key]) ? (options[key] as readonly string[]) : [];
-      options[key] = [...existing, flagValue];
-    } else options[key] = flagValue;
-    index += value.includes("=") || flagValue === "__flag__" ? 1 : 2;
+      options[key] = [...existing, ...items];
+      index += equals > 2 ? 1 : items.length + 1;
+      continue;
+    }
+    const flagValue = equals > 2 ? value.slice(equals + 1) : argv[index + 1];
+    if (!flagValue || flagValue.startsWith("--")) throw new CliUsageError(`--${key} requires a value`);
+    validateCommandValue(key, flagValue);
+    options[key] = flagValue;
+    index += equals > 2 ? 1 : 2;
   }
   if (
     ["tweet", "profile-tweets", "followers", "following", "verified-followers", "user-info"].includes(
@@ -115,6 +120,95 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         : `${command} requires at least one user`,
     );
   return { ...global, command, values, options };
+}
+
+const LIST_OPTIONS = new Set([
+  "from",
+  "to",
+  "mention",
+  "all-words",
+  "any-words",
+  "exact-phrases",
+  "hashtags-any",
+  "hashtags-exclude",
+  "exclude-words",
+]);
+
+const BOOLEAN_OPTIONS = new Set([
+  "save",
+  "pretty",
+  "resume",
+  "raw-json",
+  "has-images",
+  "has-videos",
+  "has-links",
+  "has-mentions",
+  "has-hashtags",
+  "verified-only",
+  "blue-verified-only",
+]);
+
+const VALUE_OPTIONS = new Set([
+  "limit",
+  "max-empty-pages",
+  "per-profile-limit",
+  "max-pages-per-profile",
+  "save-format",
+  "save-dir",
+  "save-name",
+  "since",
+  "until",
+  "lang",
+  "display-type",
+  "tweet-type",
+  "min-likes",
+  "min-replies",
+  "min-retweets",
+  "place",
+  "geocode",
+  "near",
+  "within",
+]);
+
+const KNOWN_OPTIONS = new Set([...LIST_OPTIONS, ...BOOLEAN_OPTIONS, ...VALUE_OPTIONS]);
+
+const POSITIVE_OPTIONS = new Set(["limit", "max-empty-pages", "per-profile-limit", "max-pages-per-profile"]);
+
+const NON_NEGATIVE_OPTIONS = new Set(["min-likes", "min-replies", "min-retweets"]);
+
+function validateCommandValue(key: string, value: string): void {
+  if (POSITIVE_OPTIONS.has(key)) positiveNumber(value, key);
+  if (NON_NEGATIVE_OPTIONS.has(key)) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0)
+      throw new CliUsageError(`--${key} must be a non-negative integer`);
+  }
+  if (key === "save-format" && !["csv", "json", "both"].includes(value))
+    throw new CliUsageError("--save-format must be csv, json, or both");
+  if (key === "display-type" && value !== "Top" && value !== "Latest")
+    throw new CliUsageError("--display-type must be Top or Latest");
+  if (
+    key === "tweet-type" &&
+    ![
+      "all",
+      "originals_only",
+      "replies_only",
+      "retweets_only",
+      "exclude_replies",
+      "exclude_retweets",
+    ].includes(value)
+  )
+    throw new CliUsageError(`Unsupported --tweet-type value: ${value}`);
+}
+
+function followingValues(argv: readonly string[], start: number): string[] {
+  const values: string[] = [];
+  for (let index = start; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (!value || value.startsWith("--")) break;
+    values.push(value);
+  }
+  return values;
 }
 
 export function searchRequestFromCli(args: CliArgs): SearchRequest {

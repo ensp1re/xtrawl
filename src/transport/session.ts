@@ -1,9 +1,10 @@
-import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { fetch as undiciFetch, type Dispatcher } from "undici";
 import type { AccountRecord, AuthMaterial, CookieMap, ProxySettings } from "../domain/accounts.js";
 import type { HttpRequestOptions, HttpResponse, HttpSession, SessionFactory } from "../domain/http.js";
 import { AccountSessionRuntimeError } from "../domain/errors.js";
+import { ProxyError } from "../domain/errors.js";
 import { prepareAuthMaterial } from "../auth/material.js";
-import { proxyToUrl } from "./proxy.js";
+import { proxyDispatcher, proxyToUrl } from "./proxy.js";
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36";
@@ -12,11 +13,15 @@ export interface SessionBuilderOptions {
   readonly bearerToken: string;
   readonly defaultProxy?: string | ProxySettings;
   readonly userAgent?: string;
+  readonly httpMode?: "auto" | "async" | "sync";
+  readonly impersonate?: string;
   readonly fetcher?: typeof undiciFetch;
   readonly factory?: SessionFactory;
 }
 
 export class SessionBuilder {
+  private readonly healthyProxies = new Map<string, number>();
+
   public constructor(private readonly options: SessionBuilderOptions) {}
 
   public forAccount(account: AccountRecord): HttpSession {
@@ -31,6 +36,8 @@ export class SessionBuilder {
         proxy,
         bearerToken: material.bearerToken,
         ...(this.options.userAgent ? { userAgent: this.options.userAgent } : {}),
+        ...(this.options.impersonate ? { impersonate: this.options.impersonate } : {}),
+        ...(this.options.httpMode ? { httpMode: this.options.httpMode } : {}),
       });
     return new FetchSession(
       material,
@@ -38,6 +45,38 @@ export class SessionBuilder {
       this.options.fetcher ?? undiciFetch,
       this.options.userAgent ?? DEFAULT_USER_AGENT,
     );
+  }
+
+  public async assertProxyHealthy(
+    account: AccountRecord,
+    options: { readonly url: string; readonly timeoutMs: number },
+  ): Promise<void> {
+    const proxyUrl = proxyToUrl(account.proxy ?? this.options.defaultProxy);
+    if (!proxyUrl) return;
+    if ((this.healthyProxies.get(proxyUrl) ?? 0) > Date.now() - 60_000) return;
+    const dispatcher = proxyDispatcher(proxyUrl);
+    if (!dispatcher) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+    try {
+      const response = await (this.options.fetcher ?? undiciFetch)(options.url, {
+        method: "GET",
+        headers: { "User-Agent": this.options.userAgent ?? DEFAULT_USER_AGENT },
+        redirect: "follow",
+        signal: controller.signal,
+        dispatcher,
+      });
+      if (response.status === 407)
+        throw new ProxyError("Proxy authentication was rejected.", { statusCode: 407 });
+      this.healthyProxies.set(proxyUrl, Date.now());
+      await response.body?.cancel();
+    } catch (error) {
+      if (error instanceof ProxyError) throw error;
+      throw new ProxyError(error instanceof Error ? error.message : String(error), { statusCode: 599 });
+    } finally {
+      clearTimeout(timeout);
+      await dispatcher.close();
+    }
   }
 }
 
@@ -52,8 +91,7 @@ class FetchSession implements HttpSession {
     private readonly userAgent: string,
   ) {
     this.cookies = material.cookies;
-    const proxyUrl = proxyToUrl(proxy);
-    if (proxyUrl) this.dispatcher = new ProxyAgent(proxyUrl);
+    this.dispatcher = proxyDispatcher(proxy);
   }
 
   public async get(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {

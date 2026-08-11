@@ -1,7 +1,7 @@
 import type { ClientConfig } from "./types.js";
 
 export const DEFAULT_CONFIG: ClientConfig = {
-  dbPath: "graph_state.db",
+  dbPath: "xtrawl_state.db",
   concurrency: 5,
   saveDir: "outputs",
   saveFormat: "csv",
@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG: ClientConfig = {
   dailyTweetsLimit: 600,
   maxEmptyPages: 1,
   apiPageSize: 20,
+  searchSplits: 5,
+  schedulerMinIntervalMs: 300_000,
   minDelayMs: 2_000,
   leaseTtlMs: 120_000,
   leaseHeartbeatMs: 30_000,
@@ -23,10 +25,15 @@ export const DEFAULT_CONFIG: ClientConfig = {
   maxTaskAttempts: 3,
   maxFallbackAttempts: 3,
   maxAccountSwitches: 2,
+  proxyCheckOnLease: true,
+  proxyCheckUrl: "https://x.com/robots.txt",
+  proxyCheckTimeoutMs: 10_000,
   profileTimelineAllowAnonymous: false,
   manifestTtlMs: 3_600_000,
   manifestUpdateOnInit: false,
   manifestScrapeOnInit: false,
+  transactionIdEnabled: true,
+  transactionIdTtlMs: 6 * 60 * 60 * 1_000,
   strict: false,
   bearerToken:
     "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",

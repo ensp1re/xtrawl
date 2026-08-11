@@ -6,7 +6,8 @@
 
 XTrawl collects public data from X without an official API key. Search posts, read profiles and
 timelines, inspect individual posts, collect follower and following lists, and save results as CSV or
-JSON. Use it from TypeScript or the command line.
+JSON. It splits long searches, rotates authorized accounts when requests fail, and saves resumable
+progress in SQLite. Use it from TypeScript or the command line.
 
 > [!IMPORTANT]
 > XTrawl is a source project and is not currently published to npm. Install it from this repository.
@@ -109,7 +110,8 @@ const following = await client.getFollowing(["OpenAI"], { limit: 500 });
 const verified = await client.getVerifiedFollowers(["OpenAI"], { limit: 500 });
 ```
 
-Targets may be usernames, `@user` handles, profile URLs, or typed target objects.
+Targets may be usernames, `@user` handles, X or Twitter profile URLs, or typed target objects.
+Profile-timeline and relationship methods also accept numeric user IDs and `/i/user/ID` URLs.
 
 ## Use the CLI
 
@@ -147,8 +149,8 @@ Available commands are `search`, `tweet`, `profile-tweets`, `followers`, `follow
 flowchart LR
     API["TypeScript API"] --> Client["XTrawl client"]
     CLI["Command-line interface"] --> Client
-    Client --> Query["Query builder and paginator"]
-    Query --> Pool["Account pool"]
+    Client --> Query["Query builder and interval scheduler"]
+    Query --> Pool["Account pool and retries"]
     Pool --> Session["Authenticated read-only session"]
     Session --> X["X web GraphQL endpoints"]
     X --> Parse["Runtime guards and typed extractors"]
@@ -160,11 +162,12 @@ flowchart LR
     State <--> Query
 ```
 
-For each operation, XTrawl leases an eligible account from SQLite, creates an authenticated session,
-builds a read-only web request, and paginates until the requested limit or another stop condition is
-reached. Responses enter the application as unknown data and are narrowed into typed records at the
-engine boundary. The account lease is then released, cooled down, or marked unusable according to
-the outcome.
+For each operation, XTrawl leases an eligible account from SQLite, verifies its proxy when configured,
+creates an authenticated session, builds a read-only web request, and paginates until the requested
+limit or another stop condition is reached. Searches default to the previous 30 days and divide that
+interval into concurrent tasks. Failed requests use bounded backoff, account switching, and session
+repair. Responses enter the application as unknown data and are narrowed into typed records at the
+engine boundary.
 
 SQLite tracks account health, request usage, leases, run history, resumable cursors, and cached
 operation manifests. It does not store collected posts or profiles unless you explicitly enable file
@@ -175,11 +178,12 @@ output.
 For one account, pass `X_AUTH_TOKEN` and `X_CSRF_TOKEN` directly. For an account pool, provide a JSON,
 Netscape-cookie, or delimited account file with `--cookies-file`, or use the equivalent library
 options. A global proxy can be set with `--proxy`; library account records may also define their own
-proxy.
+HTTP, HTTPS, or SOCKS5 proxy.
 
 XTrawl selects only accounts that have usable authentication, are outside cooldown, are not already
 leased, and remain within configured daily limits. Rate-limit and transient failures trigger a
-cooldown. Authentication failures mark the account unusable so it is not selected again.
+cooldown and can switch the current task to another account. Authentication failures attempt a CSRF
+cookie repair before the account remains unusable.
 
 ## Resume and save output
 
@@ -187,7 +191,15 @@ Set `resume: true` or pass `--resume` to persist pagination cursors. XTrawl clea
 that operation finishes successfully and retains it when a run is interrupted.
 
 Set `save: true` or pass `--save` to write records. Supported formats are `csv`, `json`, and `both`.
-The default output directory is `outputs/`; use `saveDir` or `--save-dir` to change it.
+The default output directory is `outputs/`; use `saveDir` or `--save-dir` to change it. Repeated saves
+append records, and generated filenames include the query/date range or collection targets.
+
+## Manage local state
+
+The library exposes safe account and run maintenance through `client.db`. It can list redacted
+accounts, import accounts, assign proxies, repair or disable an account, clear expired leases and
+checkpoints, reset local counters, inspect run history, and remove a named account. Destructive
+duplicate cleanup is a dry run unless explicitly enabled.
 
 ## Safety and limitations
 

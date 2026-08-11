@@ -11,7 +11,8 @@
 
 - The client sends only read-oriented GraphQL query requests over GET or POST and an optional home-page bootstrap request.
 - The client does not expose mutation operations.
-- Proxies are normalized and passed to the HTTP adapter; proxy URLs are never emitted in diagnostics.
+- HTTP, HTTPS, and SOCKS5 proxies are normalized and passed to the HTTP adapter. Health checks carry
+  no session cookies, and proxy credentials are redacted from inspection and diagnostics.
 - External payloads are parsed as `unknown` and narrowed before use.
 
 ## Local state

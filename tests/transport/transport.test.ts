@@ -3,6 +3,7 @@ import { AccountSessionAuthError, AuthError, NetworkError, RateLimitError } from
 import { GraphqlTransport } from "../../src/transport/graphql.js";
 import { SessionBuilder, cookieHeader } from "../../src/transport/session.js";
 import { TransactionIdProvider } from "../../src/transport/transaction-id.js";
+import { proxyToUrl } from "../../src/transport/proxy.js";
 import { response, sessionFactory } from "../helpers/fake-http.js";
 
 describe("session boundaries", () => {
@@ -22,6 +23,27 @@ describe("session boundaries", () => {
     });
     expect(cookieHeader(session.cookies)).toContain("auth_token=a");
     await expect(session.get("https://x.test")).resolves.toMatchObject({ status: 200 });
+  });
+
+  test("passes HTTP mode and impersonation settings to custom sessions", () => {
+    let received: Record<string, unknown> | undefined;
+    const builder = new SessionBuilder({
+      bearerToken: "bearer",
+      httpMode: "sync",
+      impersonate: "chrome",
+      factory: (options) => {
+        received = options as unknown as Record<string, unknown>;
+        return sessionFactory(() => response({}))(options);
+      },
+    });
+    builder.fromMaterial({
+      authToken: "a",
+      csrfToken: "b",
+      bearerToken: "bearer",
+      cookies: { auth_token: "a", ct0: "b" },
+    });
+    expect(received).toMatchObject({ httpMode: "sync", impersonate: "chrome" });
+    expect(proxyToUrl("socks5://user:pass@127.0.0.1:1080")).toBe("socks5://user:pass@127.0.0.1:1080");
   });
 });
 
@@ -60,6 +82,16 @@ describe("GraphQL transport", () => {
     await expect(transport.get(auth, "https://x.test", {}, 1000)).rejects.toThrow(AuthError);
     await expect(transport.get(rate, "https://x.test", {}, 1000)).rejects.toThrow(RateLimitError);
     await expect(transport.get(server, "https://x.test", {}, 1000)).rejects.toThrow(NetworkError);
+  });
+
+  test("honors exhausted rate-limit headers on successful HTTP responses", async () => {
+    const transport = new GraphqlTransport(new TransactionIdProvider());
+    const session = sessionFactory(() =>
+      response({ data: {} }, 200, { "x-rate-limit-remaining": "0", "x-rate-limit-reset": "2000000000" }),
+    )({ cookies: {} });
+    await expect(transport.get(session, "https://x.test", {}, 1000)).rejects.toMatchObject({
+      diagnostics: { statusCode: 429, resetAt: 2_000_000_000_000 },
+    });
   });
 
   test("passes a transaction id to the HTTP session", async () => {

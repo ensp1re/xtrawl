@@ -14,6 +14,8 @@ export interface ClientConfig {
   readonly dailyTweetsLimit: number;
   readonly maxEmptyPages: number;
   readonly apiPageSize: number;
+  readonly searchSplits: number;
+  readonly schedulerMinIntervalMs: number;
   readonly minDelayMs: number;
   readonly leaseTtlMs: number;
   readonly leaseHeartbeatMs: number;
@@ -27,11 +29,16 @@ export interface ClientConfig {
   readonly maxTaskAttempts: number;
   readonly maxFallbackAttempts: number;
   readonly maxAccountSwitches: number;
+  readonly proxyCheckOnLease: boolean;
+  readonly proxyCheckUrl: string;
+  readonly proxyCheckTimeoutMs: number;
   readonly profileTimelineAllowAnonymous: boolean;
   readonly manifestUrl?: string;
   readonly manifestTtlMs: number;
   readonly manifestUpdateOnInit: boolean;
   readonly manifestScrapeOnInit: boolean;
+  readonly transactionIdEnabled: boolean;
+  readonly transactionIdTtlMs: number;
   readonly strict: boolean;
   readonly bearerToken: string;
 }

@@ -49,6 +49,13 @@ export interface TargetInput {
   readonly source?: string;
 }
 
+export interface UserInfoRequest {
+  readonly save?: boolean;
+  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveDir?: string;
+  readonly saveName?: string;
+}
+
 export interface ProfileTimelineRequest {
   readonly targets: readonly TargetInput[];
   readonly limit?: number;

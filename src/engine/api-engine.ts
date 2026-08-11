@@ -137,7 +137,9 @@ export class ApiEngine {
   ): Promise<{ readonly username: string; readonly userId: string; readonly raw: Record<string, unknown> }> {
     const username =
       target.username?.replace(/^@/u, "") ?? target.profileUrl?.split("/").filter(Boolean).pop();
-    if (!username) throw new NetworkError("Target has no resolvable username.", { statusCode: 400 });
+    if (target.userId && !username) return { username: target.userId, userId: target.userId, raw: {} };
+    if (!username)
+      throw new NetworkError("Target has no resolvable username or user ID.", { statusCode: 400 });
     const raw = target.userId ? {} : await this.lookupUser(session, username);
     const userId = target.userId ?? String(raw.rest_id ?? raw.id ?? "");
     if (!userId) throw new NetworkError(`Target ${username} has no user id.`, { statusCode: 404 });

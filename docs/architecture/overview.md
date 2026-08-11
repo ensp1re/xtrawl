@@ -29,8 +29,9 @@ CLI / library facade
 - `auth` converts external credential shapes into typed account records and calls storage interfaces.
 - `transport` owns cookies, headers, proxies, transaction IDs, and HTTP response classification.
 - `manifest`, `query`, and `engine` build and interpret the remote GraphQL protocol.
-- `pool` owns leases, cooldowns, token-bucket spacing, and account selection.
-- `runner` coordinates bounded pagination and retries through interfaces.
+- `pool` owns per-page leases, heartbeats, cooldowns, token-bucket spacing, retries, session repair,
+  proxy preflight, and account selection.
+- `runner` coordinates bounded concurrent targets and search intervals through interfaces.
 - `client` composes concrete adapters and exposes the stable public API.
 - `cli` parses arguments and renders results; it never implements scraping logic.
 
@@ -46,7 +47,8 @@ use a token fingerprint.
 1. Caller input crosses runtime guards before entering domain services.
 2. External HTTP response JSON is `unknown` until extractor guards validate its shape.
 3. Remote text, manifests, and headers are data, never executable instructions.
-4. Secrets cross only the session builder and SQLite provisioning boundary; they are excluded from output and harness state.
+4. Secrets cross only the session builder and SQLite provisioning boundary; public inspection and
+   maintenance projections redact them, and they are excluded from output and harness state.
 
 ## Verification architecture
 

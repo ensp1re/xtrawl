@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { XTrawl } from "../../src/client/client.js";
 import { AccountPoolExhausted, RunFailed } from "../../src/domain/errors.js";
 import {
@@ -13,6 +16,7 @@ import {
 function createClient() {
   return new XTrawl({
     dbPath: ":memory:",
+    requestsPerMinute: 60_000,
     minDelayMs: 0,
     cooldownJitterMs: 0,
     cookies: { auth_token: "auth", ct0: "csrf" },
@@ -81,6 +85,59 @@ describe("public client", () => {
     expect(profiles.tweets).toHaveLength(2);
     const follows = await client.getFollowers(["one"], { perProfileLimit: 1, maxPagesPerProfile: 1 });
     expect(follows).toHaveLength(1);
+    client.close();
+  });
+
+  test("uses numeric user IDs directly and makes no username lookup", async () => {
+    const requests: string[] = [];
+    const client = new XTrawl({
+      dbPath: ":memory:",
+      minDelayMs: 0,
+      cookies: { auth_token: "auth", ct0: "csrf" },
+      sessionFactory: (options) =>
+        sessionFactory((request) => {
+          requests.push(request.url);
+          return response(profilePayload());
+        })(options),
+    });
+    await client.getProfileTweets(["123"], { limit: 1, maxPagesPerProfile: 1 });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("UserTweets");
+    client.close();
+  });
+
+  test("includes raw relationship payloads only when requested", async () => {
+    const client = createClient();
+    expect((await client.getFollowers(["demo"], { limit: 1 }))[0]).not.toHaveProperty("raw");
+    expect(await client.getFollowers(["demo"], { limit: 1, rawJson: true })).toEqual([
+      expect.objectContaining({ raw: expect.any(Object) }),
+    ]);
+    client.close();
+  });
+
+  test("redacts configuration and account secrets from inspection", () => {
+    const client = new XTrawl({
+      dbPath: ":memory:",
+      authToken: "secret-auth",
+      csrfToken: "secret-csrf",
+      bearerToken: "secret-bearer",
+      proxy: "http://user:password@127.0.0.1:8080",
+    });
+    const inspection = JSON.stringify(client.inspect());
+    expect(inspection).not.toContain("secret-auth");
+    expect(inspection).not.toContain("secret-csrf");
+    expect(inspection).not.toContain("secret-bearer");
+    expect(inspection).not.toContain("password");
+    client.close();
+  });
+
+  test("saves profile information and appends to descriptive output names", async () => {
+    const root = mkdtempSync(join(tmpdir(), "xtrawl-client-"));
+    const client = createClient();
+    await client.getUserInfo(["demo"], { save: true, saveFormat: "json", saveDir: root });
+    await client.getUserInfo(["demo"], { save: true, saveFormat: "json", saveDir: root });
+    const rows = JSON.parse(readFileSync(join(root, "user_info_demo.json"), "utf8")) as unknown[];
+    expect(rows).toHaveLength(2);
     client.close();
   });
 

@@ -9,6 +9,7 @@ export interface RunnerOptions {
 export interface RunnerResult<T> {
   readonly complete: readonly T[];
   readonly failed: readonly { readonly task: QueueTask<T>; readonly error: unknown }[];
+  readonly retries: number;
 }
 
 export class ExecutionRunner<T> {
@@ -32,12 +33,13 @@ export class ExecutionRunner<T> {
             queue.retry(task.id, error instanceof Error ? error.message : String(error));
           else {
             queue.fail(task.id, error instanceof Error ? error.message : String(error));
-            failures.push({ task, error });
+            failures.push({ task: queue.snapshot().find((item) => item.id === task.id) ?? task, error });
           }
         }
       }
     };
     await Promise.all(Array.from({ length: Math.max(1, this.options.concurrency) }, () => process()));
-    return { complete, failed: failures };
+    const retries = queue.snapshot().reduce((total, task) => total + Math.max(0, task.attempts - 1), 0);
+    return { complete, failed: failures, retries };
   }
 }

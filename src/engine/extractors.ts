@@ -44,6 +44,7 @@ export function mapFollow(
     readonly profileUrl?: string;
   },
   type: FollowRecord["type"],
+  includeRaw = false,
 ): FollowRecord {
   return {
     ...normalizeUser(user),
@@ -55,7 +56,7 @@ export function mapFollow(
       ...(target.username ? { username: target.username } : {}),
       ...(target.profileUrl ? { profileUrl: target.profileUrl } : {}),
     },
-    raw: user,
+    ...(includeRaw ? { raw: user } : {}),
   };
 }
 
