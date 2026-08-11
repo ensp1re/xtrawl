@@ -9,8 +9,8 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T18:39:28Z",
-  "nextAction": "TODO: design a caller-owned account state API that can export and restore cookies and operational account state without requiring XTrawl-managed SQLite.",
+  "updatedAt": "2026-08-11T18:46:07Z",
+  "nextAction": "TODO: design caller-owned account state plus a manual search-page API that accepts a cursor and returns nextCursor without requiring XTrawl-managed SQLite pagination.",
   "blocker": null,
   "verification": {
     "passed": [
