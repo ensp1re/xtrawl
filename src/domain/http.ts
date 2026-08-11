@@ -1,0 +1,38 @@
+import type { CookieMap, ProxySettings } from "./accounts.js";
+
+export interface HttpResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+export interface HttpSession {
+  readonly cookies: CookieMap;
+  get(url: string, options?: HttpRequestOptions): Promise<HttpResponse>;
+  close(): Promise<void>;
+}
+
+export interface HttpRequestOptions {
+  readonly query?: Readonly<Record<string, string>>;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly timeoutMs?: number;
+  readonly redirect?: "follow" | "error" | "manual";
+}
+
+export interface SessionFactoryOptions {
+  readonly cookies: CookieMap;
+  readonly proxy?: string | ProxySettings;
+  readonly bearerToken?: string;
+  readonly userAgent?: string;
+  readonly impersonate?: string;
+}
+
+export type SessionFactory = (options: SessionFactoryOptions) => HttpSession;
+
+export interface GraphqlResponse {
+  readonly data: unknown | null;
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly snippet: string;
+}

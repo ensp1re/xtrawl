@@ -1,0 +1,43 @@
+import { TaskQueue, type QueueTask } from "./task-queue.js";
+
+export interface RunnerOptions {
+  readonly concurrency: number;
+  readonly leaseTtlMs?: number;
+  readonly maxAttempts?: number;
+}
+
+export interface RunnerResult<T> {
+  readonly complete: readonly T[];
+  readonly failed: readonly { readonly task: QueueTask<T>; readonly error: unknown }[];
+}
+
+export class ExecutionRunner<T> {
+  public constructor(private readonly options: RunnerOptions) {}
+
+  public async run(tasks: readonly T[], worker: (task: T) => Promise<void>): Promise<RunnerResult<T>> {
+    const queue = new TaskQueue<T>();
+    tasks.forEach((task, index) => queue.enqueue(String(index), task));
+    const failures: Array<{ readonly task: QueueTask<T>; readonly error: unknown }> = [];
+    const complete: T[] = [];
+    const process = async (): Promise<void> => {
+      while (true) {
+        const task = queue.lease(this.options.leaseTtlMs);
+        if (!task) return;
+        try {
+          await worker(task.payload);
+          queue.ack(task.id);
+          complete.push(task.payload);
+        } catch (error) {
+          if (task.attempts < (this.options.maxAttempts ?? 3))
+            queue.retry(task.id, error instanceof Error ? error.message : String(error));
+          else {
+            queue.fail(task.id, error instanceof Error ? error.message : String(error));
+            failures.push({ task, error });
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, this.options.concurrency) }, () => process()));
+    return { complete, failed: failures };
+  }
+}

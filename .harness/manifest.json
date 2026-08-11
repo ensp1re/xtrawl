@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "status": "operational",
+  "project": {
+    "name": "x-graph-harvester",
+    "root": "."
+  },
+  "sources": {
+    "instructions": ["AGENTS.md"],
+    "product": ["docs/product/specification.md"],
+    "architecture": ["docs/architecture/overview.md", "docs/decisions/0001-runtime-and-state.md", "docs/decisions/0002-modular-boundaries.md"],
+    "security": ["docs/security/data-boundary.md"],
+    "workState": ".harness/state/work.json",
+    "handoff": ".harness/state/handoff.json",
+    "events": null
+  },
+  "commands": {
+    "context": "node scripts/harness/context.mjs",
+    "check": "npm run check",
+    "verify": "npm run verify"
+  },
+  "budgets": [
+    {"name": "root-instructions", "paths": ["AGENTS.md"], "maxBytes": 16000},
+    {"name": "product-spec", "paths": ["docs/product/specification.md"], "maxBytes": 24000},
+    {"name": "architecture", "paths": ["docs/architecture/overview.md"], "maxBytes": 18000},
+    {"name": "live-state", "paths": [".harness/state/work.json", ".harness/state/handoff.json"], "maxBytes": 18000}
+  ],
+  "clients": {
+    "canonical": "agents-md",
+    "adapters": {
+      "claude-code": "CLAUDE.md"
+    }
+  }
+}

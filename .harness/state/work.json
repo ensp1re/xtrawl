@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "taskId": "initial-build",
+  "title": "Build the typed read-only graph client",
+  "status": "ready_for_review",
+  "allowedTransitions": ["active", "blocked", "ready_for_review", "complete"],
+  "owner": "project-user",
+  "plan": "docs/plans/initial-build.md",
+  "product": "docs/product/specification.md",
+  "architecture": "docs/architecture/overview.md",
+  "startedAt": "2026-08-11T00:00:00Z",
+  "updatedAt": "2026-08-11T15:26:44Z",
+  "nextAction": "Review the standalone project; run the opt-in live suite only with intentionally supplied credentials.",
+  "blocker": null,
+  "verification": {
+    "passed": [
+      "npm run verify",
+      "npm run test:integration (credential-gated suite skipped cleanly)",
+      "npm run cli -- --help",
+      "official harness validator --strict",
+      "official context-budget evaluator",
+      "build-agent-harness bundled script tests"
+    ],
+    "failed": [],
+    "notRun": ["credential-dependent live network requests"]
+  }
+}
