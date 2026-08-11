@@ -1,4 +1,6 @@
-import { access, readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { access, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -10,7 +12,36 @@ for (const relative of required) {
 if (packageJson.name !== "xtrawl") {
   throw new Error("unexpected package name");
 }
-if (packageJson.bin?.xtrawl !== "./dist/cli/main.js") {
+if (packageJson.version !== "0.1.0") {
+  throw new Error("unexpected package version");
+}
+if (packageJson.license !== "UNLICENSED") {
+  throw new Error("unexpected package license");
+}
+if (packageJson.main !== "./dist/index.js" || packageJson.types !== "./dist/index.d.ts") {
+  throw new Error("unexpected package entry point");
+}
+if (packageJson.bin?.xtrawl !== "dist/cli/main.js") {
   throw new Error("unexpected CLI binary");
 }
+const expectedFiles = ["dist", "README.md", "DOCUMENTATION.md", "docs"];
+if (JSON.stringify(packageJson.files) !== JSON.stringify(expectedFiles)) {
+  throw new Error("unexpected npm package allowlist");
+}
+if (packageJson.publishConfig?.access !== "public") {
+  throw new Error("npm package must publish with public access");
+}
+
+const smokeDirectory = await mkdtemp(join(tmpdir(), "xtrawl-package-check-"));
+try {
+  const cliLink = join(smokeDirectory, "xtrawl");
+  await symlink(join(root, "dist/cli/main.js"), cliLink);
+  const cli = spawnSync(process.execPath, [cliLink, "--help"], { encoding: "utf8" });
+  if (cli.status !== 0 || !cli.stdout.includes("Usage:")) {
+    throw new Error(`installed CLI smoke check failed: ${cli.stderr || cli.stdout}`);
+  }
+} finally {
+  await rm(smokeDirectory, { recursive: true, force: true });
+}
+
 console.log("package_check=passed");

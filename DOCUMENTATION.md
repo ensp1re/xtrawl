@@ -5,7 +5,7 @@ the command line. XTrawl is an authenticated, read-only collector for public X d
 
 ## Contents
 
-- [Install from source](#install-from-source)
+- [Install](#install)
 - [Authenticate](#authenticate)
 - [Use multiple accounts](#use-multiple-accounts)
 - [Use a proxy](#use-a-proxy)
@@ -24,7 +24,7 @@ the command line. XTrawl is an authenticated, read-only collector for public X d
 - [Troubleshoot common problems](#troubleshoot-common-problems)
 - [Know the limitations](#know-the-limitations)
 
-## Install from source
+## Install
 
 Requirements:
 
@@ -32,7 +32,13 @@ Requirements:
 - npm
 - An X browser session that you own or are authorized to use
 
-Clone, install, and build:
+Install the package:
+
+```bash
+npm install xtrawl
+```
+
+To contribute or run the source checkout:
 
 ```bash
 git clone https://github.com/ensp1re/xtrawl.git
@@ -41,8 +47,8 @@ npm install
 npm run build
 ```
 
-The package is not currently published to npm. The build writes ESM output to `dist/`, and the
-source checkout exposes the CLI through `npm run cli --`.
+The source build writes ESM output to `dist/`. In source-checkout commands, replace `xtrawl` with
+`npm run cli --`.
 
 Verify the checkout:
 
@@ -62,7 +68,7 @@ XTrawl calls these values `authToken` and `csrfToken` in TypeScript and reads th
 export X_AUTH_TOKEN="your-auth-token"
 export X_CSRF_TOKEN="your-ct0-token"
 
-npm run cli -- user-info OpenAI --pretty
+xtrawl user-info OpenAI --pretty
 ```
 
 This is the smallest setup for a single account.
@@ -79,7 +85,7 @@ X_CSRF_TOKEN=your-ct0-token
 Pass global options before the command:
 
 ```bash
-npm run cli -- --env-file .env.local user-info OpenAI --pretty
+xtrawl --env-file .env.local user-info OpenAI --pretty
 ```
 
 Environment files also recognize `AUTH_TOKEN` for the auth cookie and `CT0` or `CSRF` for the CSRF
@@ -125,7 +131,7 @@ For JSON files, use one object or an array of objects:
 Never commit this file. Load it from the CLI:
 
 ```bash
-npm run cli -- --cookies-file ./accounts.json search "typescript" --limit 100
+xtrawl --cookies-file ./accounts.json search "typescript" --limit 100
 ```
 
 Or from TypeScript:
@@ -160,7 +166,7 @@ new input, create the client with `provision: false`.
 Set one proxy for all accounts:
 
 ```bash
-npm run cli -- --proxy http://127.0.0.1:8080 search "typescript" --limit 20
+xtrawl --proxy http://127.0.0.1:8080 search "typescript" --limit 20
 ```
 
 The TypeScript API accepts a URL or structured proxy settings:
@@ -184,7 +190,7 @@ minute. Keep proxy credentials in secret storage, not in committed configuration
 
 ## Use the TypeScript API
 
-The package is ESM. From a built source checkout, import from `dist/index.js`:
+The package is ESM:
 
 ```ts
 import {
@@ -192,7 +198,7 @@ import {
   RateLimitError,
   XTrawl,
   type SearchResult,
-} from "./dist/index.js";
+} from "xtrawl";
 ```
 
 ### Create and close a client
@@ -378,7 +384,8 @@ Syntax:
 xtrawl [global options] COMMAND [values] [command options]
 ```
 
-From the source checkout, replace `xtrawl` with `npm run cli --`.
+Use `npx xtrawl` if you installed XTrawl locally rather than globally. From a source checkout,
+replace `xtrawl` with `npm run cli --`.
 
 ### Commands
 
@@ -412,7 +419,7 @@ Put these before the command:
 Example:
 
 ```bash
-npm run cli -- \
+xtrawl \
   --env-file .env.local \
   --db-path ./state/xtrawl.db \
   search "typescript" \
@@ -440,7 +447,7 @@ npm run cli -- \
 Repeat list options or place multiple values after one list option:
 
 ```bash
-npm run cli -- search "release" \
+xtrawl search "release" \
   --from OpenAI \
   --from github \
   --exact-phrases "open source" \
@@ -588,7 +595,7 @@ import {
   AuthError,
   RateLimitError,
   XTrawlError,
-} from "./dist/index.js";
+} from "xtrawl";
 
 try {
   await client.search("typescript", { limit: 100 });
@@ -625,7 +632,7 @@ manifest and retries once when X rejects an outdated operation ID with HTTP 404 
 refresh before the first operation:
 
 ```bash
-npm run cli -- --manifest-scrape-on-init search "typescript" --limit 20
+xtrawl --manifest-scrape-on-init search "typescript" --limit 20
 ```
 
 Or in TypeScript:
@@ -746,7 +753,7 @@ Move global options before the command:
 
 ```bash
 # Correct
-npm run cli -- --db-path ./state/xtrawl.db search "typescript" --limit 20
+xtrawl --db-path ./state/xtrawl.db search "typescript" --limit 20
 ```
 
 ## Know the limitations
@@ -760,7 +767,6 @@ npm run cli -- --db-path ./state/xtrawl.db search "typescript" --limit 20
   collection.
 - Pagination completeness depends on the cursors and records returned by the platform.
 - Live integration tests require caller-supplied credentials and do not run in the default test gate.
-- The package is not currently published to npm; use a source checkout.
 
 For the behavioral contract, architecture boundaries, and security decisions, read the
 [product specification](docs/product/specification.md),

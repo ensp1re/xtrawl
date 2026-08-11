@@ -2,16 +2,49 @@
   "name": "xtrawl",
   "version": "0.1.0",
   "description": "Scrape public X posts, profiles, followers, and following",
+  "license": "UNLICENSED",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "DOCUMENTATION.md",
+    "docs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ensp1re/xtrawl.git"
+  },
+  "homepage": "https://github.com/ensp1re/xtrawl#readme",
+  "bugs": {
+    "url": "https://github.com/ensp1re/xtrawl/issues"
+  },
+  "keywords": [
+    "x",
+    "twitter",
+    "scraper",
+    "crawler",
+    "typescript"
+  ],
   "engines": {
     "node": ">=22.5.0"
   },
   "exports": {
-    ".": "./dist/index.js",
-    "./cli": "./dist/cli/main.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli/main.d.ts",
+      "import": "./dist/cli/main.js",
+      "default": "./dist/cli/main.js"
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
-    "xtrawl": "./dist/cli/main.js"
+    "xtrawl": "dist/cli/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -28,7 +61,12 @@
     "package:check": "node scripts/package-check.mjs",
     "harness:validate": "python3 scripts/harness/validate.py",
     "harness:budget": "python3 scripts/harness/budget.py",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run verify",
     "prepare": "husky"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "fetch-socks": "^1.3.3",

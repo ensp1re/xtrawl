@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { XTrawl } from "../client/client.js";
 import { HELP } from "./help.js";
 import { collectionOptionsFromCli, parseArgs, searchRequestFromCli, CliUsageError } from "./parser.js";
@@ -68,4 +70,14 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) process.exitCode = await runCli();
+function isDirectExecution(): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) return false;
+  try {
+    return realpathSync(entryPath) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) process.exitCode = await runCli();

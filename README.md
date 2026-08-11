@@ -9,9 +9,6 @@ timelines, inspect individual posts, collect follower and following lists, and s
 JSON. It splits long searches, rotates authorized accounts when requests fail, and saves resumable
 progress in SQLite. Use it from TypeScript or the command line.
 
-> [!IMPORTANT]
-> XTrawl is a source project and is not currently published to npm. Install it from this repository.
-
 ## What XTrawl collects
 
 - Search results with date, account, phrase, hashtag, language, location, media, and engagement filters
@@ -28,10 +25,7 @@ XTrawl never posts, replies, likes, follows, messages, or changes account settin
 XTrawl requires Node.js 22.5 or newer and npm.
 
 ```bash
-git clone https://github.com/ensp1re/xtrawl.git
-cd xtrawl
-npm install
-npm run build
+npm install xtrawl
 ```
 
 Provide session cookies from an X account you own or are authorized to use. Keep them in environment
@@ -45,7 +39,7 @@ export X_CSRF_TOKEN="your-ct0-token"
 Run a search:
 
 ```bash
-npm run cli -- search "typescript" \
+npx xtrawl search "typescript" \
   --since 2026-01-01 \
   --display-type Latest \
   --limit 100 \
@@ -59,10 +53,10 @@ by default.
 
 ## Use the TypeScript API
 
-When working from a source checkout, import the built package from `dist`:
+Import the package from TypeScript or JavaScript:
 
 ```ts
-import { XTrawl } from "./dist/index.js";
+import { XTrawl } from "xtrawl";
 
 const client = await XTrawl.create({
   authToken: process.env.X_AUTH_TOKEN,
@@ -119,20 +113,20 @@ Global options must appear before the command. Command options come after it.
 
 ```bash
 # Inspect profiles
-npm run cli -- user-info OpenAI github --pretty
+npx xtrawl user-info OpenAI github --pretty
 
 # Inspect a post
-npm run cli -- tweet 1234567890 --pretty
+npx xtrawl tweet 1234567890 --pretty
 
 # Save posts from two profiles as CSV and JSON
-npm run cli -- profile-tweets OpenAI github \
+npx xtrawl profile-tweets OpenAI github \
   --per-profile-limit 100 \
   --resume \
   --save \
   --save-format both
 
 # Use an account file, a proxy, and a separate state database
-npm run cli -- \
+npx xtrawl \
   --cookies-file ./accounts.json \
   --proxy http://127.0.0.1:8080 \
   --db-path ./state/xtrawl.db \

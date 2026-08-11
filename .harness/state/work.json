@@ -9,7 +9,7 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T18:50:27Z",
+  "updatedAt": "2026-08-11T19:01:16Z",
   "nextAction": "TODO: design the extensibility milestone covering caller-owned account state, manual cursor pagination, and an MCP server for agent-harness operation.",
   "blocker": null,
   "verification": {
@@ -30,6 +30,10 @@
       "npm run cli -- --help",
       "XTrawl public export smoke check",
       "npm pack --dry-run --ignore-scripts --cache /tmp/xtrawl-npm-cache",
+      "npm run verify (npm release metadata and installed CLI symlink regression)",
+      "clean-room tarball install (public API import and installed CLI help)",
+      "npm publish xtrawl@0.1.0 (prepublish verification passed)",
+      "clean-room registry install of xtrawl@0.1.0 (public API import and installed CLI help)",
       "official harness validator --strict",
       "official context-budget evaluator",
       "build-agent-harness bundled script tests"
