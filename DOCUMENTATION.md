@@ -712,22 +712,6 @@ following, messaging, or account-administration operations.
 
 ## Troubleshoot common problems
 
-### Check every production endpoint
-
-After building, run the bounded production smoke script:
-
-```bash
-export X_AUTH_TOKEN="your-auth-token"
-export X_CSRF_TOKEN="your-ct0-token"
-npm run smoke:live
-```
-
-It prints the complete normalized response for all seven read endpoints with section headings and a
-final account-pool summary. Collection calls are capped at one page and two records. The script keeps
-running after an endpoint failure so you can see the full matrix, then exits with status `1` if any
-endpoint failed. Run `node scripts/live-smoke.mjs --help` for optional target, query, tweet-ID, proxy,
-and manifest-refresh environment variables.
-
 ### No eligible account is available
 
 Check that at least one account has both usable `auth_token` and `ct0` values. The account may also be

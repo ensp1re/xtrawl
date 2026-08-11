@@ -221,22 +221,6 @@ duplicate cleanup is a dry run unless explicitly enabled.
 
 ## Development
 
-Run a bounded production smoke check for every read endpoint and print each complete normalized
-response:
-
-```bash
-export X_AUTH_TOKEN="your-auth-token"
-export X_CSRF_TOKEN="your-ct0-token"
-
-npm run smoke:live
-```
-
-The script checks user information, search, profile posts, one post, followers, following, and
-verified followers. It requests at most one page and two records per collection endpoint, includes
-raw relationship JSON, prints failures without stopping the remaining checks, and exits non-zero if
-anything fails. Use `XTRAWL_SMOKE_TARGET`, `XTRAWL_SMOKE_QUERY`, or `XTRAWL_SMOKE_TWEET_ID` to change
-the production inputs. Credentials are read only from the process environment and are never printed.
-
 Run the fast local checks while working:
 
 ```bash

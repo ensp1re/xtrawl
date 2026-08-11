@@ -9,8 +9,8 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T18:25:50Z",
-  "nextAction": "Run npm run smoke:live after X_AUTH_TOKEN and X_CSRF_TOKEN are supplied through the process environment.",
+  "updatedAt": "2026-08-11T18:29:10Z",
+  "nextAction": "Monitor X operation changes and rerun the credential-gated integration suite after protocol updates.",
   "blocker": null,
   "verification": {
     "passed": [
@@ -21,8 +21,6 @@
       "npm run verify (GraphQL POST, manifest refresh, and tweet lookup)",
       "npm run verify (final credential-boundary review)",
       "npm run verify (search orchestration, retries, transport, maintenance API, and documentation)",
-      "npm run verify (production smoke script and documentation)",
-      "node scripts/live-smoke.mjs --help",
       "deterministic parity suite (108 passed, 3 credential-gated live tests skipped)",
       "npm run test:integration (three credential-gated read-only tests passed)",
       "bounded live matrix (seven operations and authenticated manifest refresh passed)",
