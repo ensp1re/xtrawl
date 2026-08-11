@@ -17,6 +17,11 @@ progress in SQLite. Use it from TypeScript or the command line.
 
 XTrawl is published on npm as [`xtrawl`](https://www.npmjs.com/package/xtrawl).
 
+> [!WARNING]
+> XTrawl is provided for educational and research purposes only. Automated scraping may violate
+> X's rules and can cause any account used with XTrawl to be restricted, locked, or permanently
+> banned. Use only accounts you own or are authorized to use, and proceed at your own risk.
+
 ## What XTrawl collects
 
 - Search results with date, account, phrase, hashtag, language, location, media, and engagement filters
