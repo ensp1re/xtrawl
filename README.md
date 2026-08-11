@@ -300,3 +300,17 @@ npm run verify
 The full gate checks formatting, linting, strict TypeScript compilation, unit tests, package and CLI
 smoke behavior, harness integrity, and context-budget limits. Live integration tests require
 caller-supplied credentials and are disabled unless explicitly enabled.
+
+## Contributing and security
+
+Bug reports, documentation fixes, and read-only collection improvements are welcome. Read
+[CONTRIBUTING.md](https://github.com/ensp1re/xtrawl/blob/main/CONTRIBUTING.md) before opening a pull
+request. Please do not propose posting, liking, following, messaging, or other account mutation
+features.
+
+Do not report vulnerabilities or credential leaks in a public issue. Follow the private disclosure
+process in [SECURITY.md](https://github.com/ensp1re/xtrawl/blob/main/SECURITY.md). By participating in
+the project, you agree to follow the
+[Code of Conduct](https://github.com/ensp1re/xtrawl/blob/main/CODE_OF_CONDUCT.md).
+
+XTrawl is available under the [MIT License](LICENSE).

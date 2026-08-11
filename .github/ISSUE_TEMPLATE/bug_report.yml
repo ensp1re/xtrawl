@@ -1,0 +1,70 @@
+name: Bug report
+description: Report reproducible incorrect behavior in XTrawl
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include cookies, tokens, passwords, private account data, or unredacted responses.
+        Report security issues privately through the repository Security tab.
+  - type: input
+    id: version
+    attributes:
+      label: XTrawl version
+      placeholder: 0.1.0 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the Node.js version and operating system.
+      placeholder: Node.js 22.18.0 on macOS 15
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - TypeScript API
+        - CLI
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest safe example that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Remove credentials, cookies, account identifiers, private data, and proxy URLs.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials and private data from this report.
+          required: true
+        - label: I used only accounts and systems I own or am authorized to test.
+          required: true
