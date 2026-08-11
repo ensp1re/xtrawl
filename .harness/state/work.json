@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "taskId": "initial-build",
   "title": "Build the XTrawl read-only X client",
-  "status": "ready_for_review",
+  "status": "complete",
   "allowedTransitions": ["active", "blocked", "ready_for_review", "complete"],
   "owner": "project-user",
   "plan": "docs/plans/initial-build.md",
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T19:31:25Z",
+  "updatedAt": "2026-08-11T19:50:18Z",
   "nextAction": "TODO: design the extensibility milestone covering caller-owned account state, manual cursor pagination, and an MCP server for agent-harness operation.",
   "blocker": null,
   "verification": {
@@ -42,7 +42,13 @@
       "npm run verify (README multi-account and cookie-lifecycle guide)",
       "official harness validator --strict",
       "official context-budget evaluator",
-      "build-agent-harness bundled script tests"
+      "build-agent-harness bundled script tests",
+      "full reachable Git history and worktree credential-pattern audit (no findings)",
+      "npm audit (0 vulnerabilities)",
+      "npm run verify (open-source community files and CI hardening)",
+      "GitHub Actions Verify (pull request #4 and merged public main passed)",
+      "anonymous GitHub API, README, and SECURITY.md access checks",
+      "GitHub public repository security configuration verification"
     ],
     "failed": [
       "initial GitHub Actions run on Node.js 22.5.0 (bundled npm 10.8.2 exited before installing development dependencies)"
