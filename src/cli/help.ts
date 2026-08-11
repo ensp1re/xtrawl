@@ -2,6 +2,7 @@ export const HELP = `xtrawl — read-only X scraper and crawler
 
 Usage:
   xtrawl [global options] search [query] [options]
+  xtrawl [global options] tweet TWEET_ID [TWEET_ID ...] [options]
   xtrawl [global options] profile-tweets USER [USER ...] [options]
   xtrawl [global options] followers USER [USER ...] [options]
   xtrawl [global options] following USER [USER ...] [options]

@@ -10,12 +10,14 @@ export interface HttpResponse {
 export interface HttpSession {
   readonly cookies: CookieMap;
   get(url: string, options?: HttpRequestOptions): Promise<HttpResponse>;
+  post?(url: string, options?: HttpRequestOptions): Promise<HttpResponse>;
   close(): Promise<void>;
 }
 
 export interface HttpRequestOptions {
   readonly query?: Readonly<Record<string, string>>;
   readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: unknown;
   readonly timeoutMs?: number;
   readonly redirect?: "follow" | "error" | "manual";
 }

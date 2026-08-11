@@ -16,7 +16,7 @@ export interface CliArgs {
   readonly manifestScrapeOnInit: boolean;
   readonly verbose: boolean;
   readonly command?:
-    "search" | "profile-tweets" | "followers" | "following" | "verified-followers" | "user-info";
+    "search" | "tweet" | "profile-tweets" | "followers" | "following" | "verified-followers" | "user-info";
   readonly values: readonly string[];
   readonly options: Readonly<Record<string, string | boolean | readonly string[]>>;
 }
@@ -64,9 +64,15 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   const command = argv[index] as CliArgs["command"] | undefined;
   if (!command) return { ...global, values: [], options: {}, command: undefined };
   if (
-    !["search", "profile-tweets", "followers", "following", "verified-followers", "user-info"].includes(
-      command,
-    )
+    ![
+      "search",
+      "tweet",
+      "profile-tweets",
+      "followers",
+      "following",
+      "verified-followers",
+      "user-info",
+    ].includes(command)
   )
     throw new CliUsageError(`Unknown command: ${command}`);
   index += 1;
@@ -98,10 +104,16 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     index += value.includes("=") || flagValue === "__flag__" ? 1 : 2;
   }
   if (
-    ["profile-tweets", "followers", "following", "verified-followers", "user-info"].includes(command) &&
+    ["tweet", "profile-tweets", "followers", "following", "verified-followers", "user-info"].includes(
+      command,
+    ) &&
     values.length === 0
   )
-    throw new CliUsageError(`${command} requires at least one user`);
+    throw new CliUsageError(
+      command === "tweet"
+        ? "tweet requires at least one post ID or status URL"
+        : `${command} requires at least one user`,
+    );
   return { ...global, command, values, options };
 }
 

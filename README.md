@@ -1,13 +1,12 @@
 <h1 align="center">XTrawl</h1>
 
 <p align="center">
-  A strictly typed, local-first TypeScript toolkit for authenticated, read-only collection of public X data.
+  Scrape public X posts, profiles, followers, and following.
 </p>
 
-XTrawl uses X's web GraphQL surface to collect public posts, profiles, followers, and following
-relationships without an official API key. It manages browser-cookie sessions, rotates eligible
-accounts, applies cooldowns and request limits, stores resumable cursors in SQLite, and can write
-typed results to CSV or JSON.
+XTrawl collects public data from X without an official API key. Search posts, read profiles and
+timelines, inspect individual posts, collect follower and following lists, and save results as CSV or
+JSON. Use it from TypeScript or the command line.
 
 > [!IMPORTANT]
 > XTrawl is a source project and is not currently published to npm. Install it from this repository.
@@ -15,6 +14,7 @@ typed results to CSV or JSON.
 ## What XTrawl collects
 
 - Search results with date, account, phrase, hashtag, language, location, media, and engagement filters
+- Individual posts by ID or status URL
 - Public profile details for one or more usernames
 - Posts from public profile timelines
 - Public followers, following, and verified-follower relationships
@@ -94,6 +94,9 @@ factory attempts to bootstrap the missing CSRF cookie before the first request.
 // Resolve public profiles.
 const profiles = await client.getUserInfo(["OpenAI", "github"]);
 
+// Inspect one public post.
+const tweet = await client.getTweet("https://x.com/OpenAI/status/1234567890");
+
 // Collect posts from public profile timelines.
 const timeline = await client.getProfileTweets(["OpenAI"], {
   perProfileLimit: 100,
@@ -116,6 +119,9 @@ Global options must appear before the command. Command options come after it.
 # Inspect profiles
 npm run cli -- user-info OpenAI github --pretty
 
+# Inspect a post
+npm run cli -- tweet 1234567890 --pretty
+
 # Save posts from two profiles as CSV and JSON
 npm run cli -- profile-tweets OpenAI github \
   --per-profile-limit 100 \
@@ -132,7 +138,7 @@ npm run cli -- \
   --limit 500
 ```
 
-Available commands are `search`, `profile-tweets`, `followers`, `following`,
+Available commands are `search`, `tweet`, `profile-tweets`, `followers`, `following`,
 `verified-followers`, and `user-info`.
 
 ## How XTrawl works

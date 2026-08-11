@@ -8,34 +8,96 @@ const OPERATION_NAMES: Record<string, string> = {
   Followers: "followers",
   Following: "following",
   BlueVerifiedFollowers: "verified_followers",
+  TweetResultByRestId: "tweet_result",
 };
 
+export interface ManifestScrapeOptions {
+  readonly authToken?: string;
+  readonly fetcher?: typeof fetch;
+  readonly maxScripts?: number;
+}
+
 export function extractManifestFromJavascript(source: string, fallback: ManifestPayload): ManifestPayload {
-  const queryIds: Record<string, string> = { ...fallback.queryIds };
+  return {
+    ...fallback,
+    queryIds: {
+      ...fallback.queryIds,
+      ...extractOperationQueryIdsFromJavascript(source),
+    },
+    version: asString(fallback.version) ?? "live",
+  };
+}
+
+export function extractOperationQueryIdsFromJavascript(source: string): Record<string, string> {
+  const queryIds: Record<string, string> = {};
   for (const [operationName, key] of Object.entries(OPERATION_NAMES)) {
-    const expression = new RegExp(
+    const queryFirst = new RegExp(
       `queryId\\s*:\\s*["']([^"']+)["']\\s*,\\s*operationName\\s*:\\s*["']${operationName}["']`,
       "u",
     );
-    const id = source.match(expression)?.[1];
+    const operationFirst = new RegExp(
+      `operationName\\s*:\\s*["']${operationName}["']\\s*,\\s*queryId\\s*:\\s*["']([^"']+)["']`,
+      "u",
+    );
+    const id = source.match(queryFirst)?.[1] ?? source.match(operationFirst)?.[1];
     if (id) queryIds[key] = id;
   }
-  return { ...fallback, queryIds, version: asString(fallback.version) ?? "live" };
+  return queryIds;
 }
 
-export async function scrapeManifestFromWeb(base: ManifestPayload): Promise<ManifestPayload> {
-  const response = await fetch("https://x.com/home", { headers: { "User-Agent": "Mozilla/5.0" } });
+export async function scrapeManifestFromWeb(
+  base: ManifestPayload,
+  options: ManifestScrapeOptions = {},
+): Promise<ManifestPayload> {
+  const fetcher = options.fetcher ?? fetch;
+  const scriptHeaders = {
+    "User-Agent": "Mozilla/5.0",
+  };
+  const pageHeaders = {
+    ...scriptHeaders,
+    ...(options.authToken ? { Cookie: `auth_token=${options.authToken}` } : {}),
+  };
+  const response = await fetcher("https://x.com/home", { headers: pageHeaders, redirect: "follow" });
   if (!response.ok) throw new Error(`Manifest page failed with status ${response.status}`);
   const html = await response.text();
-  const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/giu)]
+  const scripts = [...new Set([...html.matchAll(/<script[^>]+src=["']([^"']+)["']/giu)])]
     .map((match) => match[1])
-    .filter((item): item is string => Boolean(item));
-  for (const src of scripts) {
-    const url = src.startsWith("http") ? src : new URL(src, "https://x.com").toString();
-    const bundle = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    .filter((item): item is string => Boolean(item))
+    .map((source) => safeScriptUrl(source))
+    .filter((source): source is string => Boolean(source))
+    .sort((left, right) => scriptPriority(left) - scriptPriority(right))
+    .slice(0, options.maxScripts ?? 20);
+  const discovered: Record<string, string> = {};
+  for (const url of scripts) {
+    const bundle = await fetcher(url, { headers: scriptHeaders, redirect: "follow" });
     if (!bundle.ok) continue;
-    const candidate = extractManifestFromJavascript(await bundle.text(), base);
-    if (Object.keys(candidate.queryIds).length >= Object.keys(base.queryIds).length) return candidate;
+    Object.assign(discovered, extractOperationQueryIdsFromJavascript(await bundle.text()));
+    if (Object.keys(discovered).length === Object.keys(OPERATION_NAMES).length) break;
   }
-  return base;
+  if (Object.keys(discovered).length === 0) {
+    throw new Error("Manifest bundles did not contain any supported operation identifiers");
+  }
+  return {
+    ...base,
+    version: "web-live",
+    queryIds: { ...base.queryIds, ...discovered },
+  };
+}
+
+function safeScriptUrl(source: string): string | undefined {
+  try {
+    const url = new URL(source, "https://x.com");
+    if (url.protocol !== "https:") return undefined;
+    if (url.hostname !== "x.com" && url.hostname !== "abs.twimg.com") return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function scriptPriority(source: string): number {
+  const path = new URL(source).pathname;
+  if (/\/responsive-web\/client-web\/main\.[^/]+\.js$/u.test(path)) return 0;
+  if (/\/main\.[^/]+\.js$/u.test(path)) return 1;
+  return 2;
 }

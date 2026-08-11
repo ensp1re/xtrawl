@@ -42,6 +42,7 @@ describe("CLI parser", () => {
     expect(parseArgs(["profile-tweets", "one", "two", "--resume"]).values).toEqual(["one", "two"]);
     expect(parseArgs(["followers", "one", "--raw-json"]).options["raw-json"]).toBe(true);
     expect(parseArgs(["user-info", "one"]).command).toBe("user-info");
+    expect(parseArgs(["tweet", "123"]).command).toBe("tweet");
   });
 
   test("supports equals syntax and help", () => {
@@ -52,6 +53,7 @@ describe("CLI parser", () => {
   test("rejects unknown flags and missing targets", () => {
     expect(() => parseArgs(["--unknown"])).toThrow(CliUsageError);
     expect(() => parseArgs(["followers"])).toThrow(CliUsageError);
+    expect(() => parseArgs(["tweet"])).toThrow(CliUsageError);
   });
 
   test("maps structured filters, booleans, output, and numeric options", () => {

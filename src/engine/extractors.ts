@@ -78,6 +78,14 @@ export function extractProfileTweets(payload: unknown): TweetPage {
   return extractTweetsFromInstructions(nested.instructions);
 }
 
+export function extractTweetResult(payload: unknown): TweetRecord | undefined {
+  const root = isRecord(payload) ? payload : {};
+  const data = isRecord(root.data) ? root.data : {};
+  const tweetResult = isRecord(data.tweetResult) ? data.tweetResult : {};
+  const result = isRecord(tweetResult.result) ? tweetResult.result : undefined;
+  return result ? mapTweet(result, `tweet-${firstString(result.rest_id) ?? "unknown"}`) : undefined;
+}
+
 export function extractFollows(payload: unknown): FollowPage {
   const instructions = profileInstructions(payload);
   const users: Record<string, unknown>[] = [];

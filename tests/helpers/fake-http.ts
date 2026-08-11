@@ -20,15 +20,19 @@ export function sessionFactory(
   handler: (request: FakeRequest) => HttpResponse | Promise<HttpResponse>,
   requests: FakeRequest[] = [],
 ): SessionFactory {
-  return (options: SessionFactoryOptions): HttpSession => ({
-    cookies: options.cookies,
-    get: async (url: string, requestOptions: HttpRequestOptions = {}) => {
+  return (options: SessionFactoryOptions): HttpSession => {
+    const request = async (url: string, requestOptions: HttpRequestOptions = {}) => {
       const request = { url, options: requestOptions };
       requests.push(request);
       return handler(request);
-    },
-    close: async () => undefined,
-  });
+    };
+    return {
+      cookies: options.cookies,
+      get: request,
+      post: request,
+      close: async () => undefined,
+    };
+  };
 }
 
 export function tweetPayload(cursor = "next-cursor"): Record<string, unknown> {
@@ -109,6 +113,20 @@ export function profilePayload(): Record<string, unknown> {
   return {
     data: { user: { result: { timeline: { timeline: { instructions: timelineBody.instructions } } } } },
   };
+}
+
+export function tweetResultPayload(): Record<string, unknown> {
+  const payload = tweetPayload();
+  const data = payload.data as Record<string, unknown>;
+  const search = data.search_by_raw_query as Record<string, unknown>;
+  const timeline = search.search_timeline as Record<string, unknown>;
+  const timelineBody = timeline.timeline as Record<string, unknown>;
+  const instructions = timelineBody.instructions as Array<Record<string, unknown>>;
+  const entries = instructions[0]?.entries as Array<Record<string, unknown>>;
+  const content = entries[0]?.content as Record<string, unknown>;
+  const itemContent = content.itemContent as Record<string, unknown>;
+  const tweetResults = itemContent.tweet_results as Record<string, unknown>;
+  return { data: { tweetResult: { result: tweetResults.result } } };
 }
 
 export function followsPayload(): Record<string, unknown> {

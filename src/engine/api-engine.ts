@@ -1,19 +1,23 @@
 import type { ClientConfig } from "../config/types.js";
+import type { GraphqlResponse, HttpSession } from "../domain/http.js";
+import type { Manifest } from "../domain/manifest.js";
 import type { FollowType, ProfileTimelineRequest, SearchRequest, TargetInput } from "../domain/requests.js";
+import type { TweetRecord } from "../domain/records.js";
 import type { FollowPage, TweetPage } from "./extractors.js";
 import {
   extractFollows,
   extractProfileTweets,
   extractSearchTweets,
+  extractTweetResult,
   extractUserResult,
 } from "./extractors.js";
 import type { ManifestProvider } from "../manifest/provider.js";
-import type { HttpSession } from "../domain/http.js";
 import type { GraphqlTransport } from "../transport/graphql.js";
 import {
   buildFollowsParams,
   buildProfileTimelineParams,
   buildSearchParams,
+  buildTweetResultParams,
   buildUserLookupParams,
   endpointFor,
   OPERATION,
@@ -28,12 +32,8 @@ export class ApiEngine {
   ) {}
 
   public async search(session: HttpSession, request: SearchRequest, cursor?: string): Promise<TweetPage> {
-    const manifest = await this.manifests.getManifest();
-    const response = await this.transport.get(
-      session,
-      endpointFor(manifest, OPERATION.search),
+    const response = await this.graphql(session, OPERATION.search, (manifest) =>
       buildSearchParams(request, manifest, cursor, this.config.apiPageSize),
-      manifest.timeoutSeconds * 1_000,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Search request returned status ${response.status}.`, {
@@ -43,12 +43,8 @@ export class ApiEngine {
   }
 
   public async lookupUser(session: HttpSession, username: string): Promise<Record<string, unknown>> {
-    const manifest = await this.manifests.getManifest();
-    const response = await this.transport.get(
-      session,
-      endpointFor(manifest, OPERATION.userLookup),
+    const response = await this.graphql(session, OPERATION.userLookup, (manifest) =>
       buildUserLookupParams(username, manifest),
-      manifest.timeoutSeconds * 1_000,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`User lookup returned status ${response.status}.`, {
@@ -65,12 +61,8 @@ export class ApiEngine {
     request: ProfileTimelineRequest,
     cursor?: string,
   ): Promise<TweetPage> {
-    const manifest = await this.manifests.getManifest();
-    const response = await this.transport.get(
-      session,
-      endpointFor(manifest, OPERATION.profileTimeline),
+    const response = await this.graphql(session, OPERATION.profileTimeline, (manifest) =>
       buildProfileTimelineParams(userId, request, manifest, cursor, this.config.apiPageSize),
-      manifest.timeoutSeconds * 1_000,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Profile timeline returned status ${response.status}.`, {
@@ -85,24 +77,58 @@ export class ApiEngine {
     type: FollowType,
     cursor?: string,
   ): Promise<FollowPage> {
-    const manifest = await this.manifests.getManifest();
     const operation =
       type === "followers"
         ? OPERATION.followers
         : type === "verified_followers"
           ? OPERATION.verifiedFollowers
           : OPERATION.following;
-    const response = await this.transport.get(
-      session,
-      endpointFor(manifest, operation),
+    const response = await this.graphql(session, operation, (manifest) =>
       buildFollowsParams(userId, operation, manifest, cursor, this.config.apiPageSize),
-      manifest.timeoutSeconds * 1_000,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Relationship request returned status ${response.status}.`, {
         statusCode: response.status,
       });
     return extractFollows(response.data);
+  }
+
+  public async tweetResult(session: HttpSession, tweetId: string): Promise<TweetRecord | undefined> {
+    const response = await this.graphql(session, OPERATION.tweetResult, (manifest) =>
+      buildTweetResultParams(tweetId, manifest),
+    );
+    if (response.status !== 200 || !response.data)
+      throw new NetworkError(`Tweet lookup returned status ${response.status}.`, {
+        statusCode: response.status,
+      });
+    return extractTweetResult(response.data);
+  }
+
+  private async graphql(
+    session: HttpSession,
+    operation: string,
+    buildParams: (manifest: Manifest) => Record<string, string>,
+  ): Promise<GraphqlResponse> {
+    const send = (manifest: Manifest): Promise<GraphqlResponse> =>
+      this.transport.get(
+        session,
+        endpointFor(manifest, operation),
+        buildParams(manifest),
+        manifest.timeoutSeconds * 1_000,
+      );
+    const manifest = await this.manifests.getManifest();
+    try {
+      return await send(manifest);
+    } catch (error) {
+      if (!isOperationMismatch(error)) throw error;
+      let refreshed: Manifest;
+      try {
+        refreshed = await this.manifests.refreshLive(session.cookies.auth_token);
+      } catch {
+        throw error;
+      }
+      return send(refreshed);
+    }
   }
 
   public async resolveTarget(
@@ -117,4 +143,9 @@ export class ApiEngine {
     if (!userId) throw new NetworkError(`Target ${username} has no user id.`, { statusCode: 404 });
     return { username, userId, raw };
   }
+}
+
+function isOperationMismatch(error: unknown): boolean {
+  if (!(error instanceof NetworkError)) return false;
+  return error.diagnostics.statusCode === 404 || error.diagnostics.statusCode === 422;
 }

@@ -5,17 +5,28 @@ import type { ManifestRepository } from "../storage/manifest-repository.js";
 import { DEFAULT_MANIFEST } from "./default-manifest.js";
 import { createManifest } from "./model.js";
 import { scrapeManifestFromWeb } from "./scraper.js";
+import type { ManifestScrapeOptions } from "./scraper.js";
 
 export class ManifestProvider {
+  private liveManifest?: Manifest;
+
   public constructor(
     private readonly config: ClientConfig,
     private readonly repository: ManifestRepository,
     private readonly remoteFetch: (url: string) => Promise<unknown> = defaultFetchJson,
+    private readonly liveAuthToken?: string,
+    private readonly liveScrape: (
+      base: ManifestPayload,
+      options?: ManifestScrapeOptions,
+    ) => Promise<ManifestPayload> = scrapeManifestFromWeb,
   ) {}
 
   public async getManifest(): Promise<Manifest> {
     const local = createManifest(DEFAULT_MANIFEST);
-    if (this.config.manifestScrapeOnInit) return this.live(local, false);
+    if (this.config.manifestScrapeOnInit) {
+      if (this.liveManifest) return this.liveManifest;
+      return this.live(local, false);
+    }
     if (this.config.manifestUrl) {
       const cached = this.repository.get(this.config.manifestUrl);
       if (cached) return createManifest(cached);
@@ -32,16 +43,20 @@ export class ManifestProvider {
     return local;
   }
 
-  public async refreshLive(): Promise<Manifest> {
-    return this.live(createManifest(DEFAULT_MANIFEST), true);
+  public async refreshLive(authToken?: string): Promise<Manifest> {
+    return this.live(createManifest(DEFAULT_MANIFEST), true, authToken);
   }
 
-  private async live(local: Manifest, strict: boolean): Promise<Manifest> {
+  private async live(local: Manifest, strict: boolean, authToken?: string): Promise<Manifest> {
     try {
-      const payload = await scrapeManifestFromWeb(DEFAULT_MANIFEST);
+      const token = authToken ?? this.liveAuthToken;
+      const payload = await this.liveScrape(DEFAULT_MANIFEST, {
+        ...(token ? { authToken: token } : {}),
+      });
       if (this.config.manifestUrl)
         this.repository.set(this.config.manifestUrl, payload, this.config.manifestTtlMs);
-      return createManifest(payload);
+      this.liveManifest = createManifest(payload);
+      return this.liveManifest;
     } catch (error) {
       if (strict) throw new ManifestError(`Live manifest refresh failed: ${String(error)}`);
       return local;

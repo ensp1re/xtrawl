@@ -40,11 +40,16 @@ describe("GraphQL transport", () => {
 
   test("returns JSON data and status for successful responses", async () => {
     const transport = new GraphqlTransport(new TransactionIdProvider());
-    const session = sessionFactory(() => response({ data: { ok: true } }))({ cookies: {} });
+    const requests: Array<Record<string, unknown>> = [];
+    const session = sessionFactory((request) => {
+      requests.push(request.options as Record<string, unknown>);
+      return response({ data: { ok: true } });
+    })({ cookies: {} });
     await expect(transport.get(session, "https://x.test", { variables: "{}" }, 1000)).resolves.toMatchObject({
       status: 200,
       data: { data: { ok: true } },
     });
+    expect(requests[0]?.body).toEqual({ variables: {} });
   });
 
   test("classifies HTTP status failures before decoding the body", async () => {

@@ -259,6 +259,16 @@ const profiles = await client.getUserInfo([
 
 Each resolvable public target returns a normalized `ProfileRecord`.
 
+### Read one post
+
+Pass a numeric post ID or an X status URL:
+
+```ts
+const tweet = await client.getTweet("https://x.com/OpenAI/status/1234567890");
+```
+
+The method returns a normalized `TweetRecord`, or `undefined` when the response has no post result.
+
 ### Collect profile posts
 
 ```ts
@@ -361,6 +371,7 @@ From the source checkout, replace `xtrawl` with `npm run cli --`.
 | Command | Values | Result |
 | --- | --- | --- |
 | `search` | Optional query | Matching public posts and run statistics |
+| `tweet` | One or more post IDs or status URLs | Individual public post records |
 | `profile-tweets` | One or more users | Posts from public profile timelines |
 | `followers` | One or more users | Public follower relationships |
 | `following` | One or more users | Public following relationships |
@@ -580,8 +591,9 @@ Do not add raw tokens or cookie values to application logs when handling an erro
 
 ## Refresh operation identifiers
 
-X's web operation identifiers can change. XTrawl ships with a local manifest and can optionally
-refresh identifiers from the live web application when resolving an operation:
+X's web operation identifiers can change. XTrawl automatically refreshes the authenticated web
+manifest and retries once when X rejects an outdated operation ID with HTTP 404 or 422. You can also
+refresh before the first operation:
 
 ```bash
 npm run cli -- --manifest-scrape-on-init search "typescript" --limit 20
@@ -597,9 +609,10 @@ const client = await XTrawl.create({
 });
 ```
 
-If startup scraping fails, the normal initialization path falls back to the bundled local manifest.
-A configured `manifestUrl` can also provide a remote JSON manifest; XTrawl caches it in SQLite and
-can use a stale cached value when a refresh fails.
+Refresh reads the authenticated responsive-web main bundle, accepts only supported X script hosts,
+and requires at least one real operation match. If an optional startup refresh fails, XTrawl falls
+back to the bundled manifest. A configured `manifestUrl` can also provide a remote JSON manifest;
+XTrawl caches it in SQLite and can use a stale cached value when a refresh fails.
 
 ## Understand storage and account health
 
@@ -670,9 +683,9 @@ have returned no next cursor. Enable `resume` before long runs so interrupted pa
 
 ### An endpoint suddenly fails
 
-Web operation identifiers may have changed. Retry with `manifestScrapeOnInit: true` or
-`--manifest-scrape-on-init`. Because the web surface is undocumented, code changes may still be
-required after a platform update.
+XTrawl retries once with an authenticated manifest refresh after HTTP 404 or 422. If the retry also
+fails, the endpoint path, variables, or response shape may have changed and code changes may be
+required.
 
 ### The CLI treats a global option as a command option
 

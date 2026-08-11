@@ -3,6 +3,7 @@ import {
   extractFollows,
   extractProfileTweets,
   extractSearchTweets,
+  extractTweetResult,
   extractUserResult,
   mapProfile,
 } from "../../src/engine/extractors.js";
@@ -11,6 +12,7 @@ import { validateConfig } from "../../src/config/validation.js";
 import { openStorage } from "../../src/storage/index.js";
 import { GraphqlTransport } from "../../src/transport/graphql.js";
 import { TransactionIdProvider } from "../../src/transport/transaction-id.js";
+import { DEFAULT_MANIFEST } from "../../src/manifest/default-manifest.js";
 import {
   response,
   sessionFactory,
@@ -18,6 +20,7 @@ import {
   userPayload,
   profilePayload,
   followsPayload,
+  tweetResultPayload,
 } from "../helpers/fake-http.js";
 
 describe("GraphQL extraction", () => {
@@ -43,6 +46,14 @@ describe("GraphQL extraction", () => {
     const user = extractUserResult(userPayload("demo", "u1"));
     expect(user?.rest_id).toBe("u1");
     expect(mapProfile(user!, { raw: "demo", source: "test" }, "demo").followersCount).toBe(10);
+  });
+
+  test("maps a single tweet result", () => {
+    expect(extractTweetResult(tweetResultPayload())).toMatchObject({
+      tweetId: "1",
+      text: "hello",
+      user: { screenName: "demo" },
+    });
   });
 });
 
@@ -77,6 +88,26 @@ describe("API engine and transport", () => {
     )({ cookies: { auth_token: "a", ct0: "b" } });
     const engine = new ApiEngine(config, provider, new GraphqlTransport(new TransactionIdProvider()));
     expect((await engine.resolveTarget(session, { username: "demo" })).userId).toBe("u1");
+    storage.database.close();
+  });
+
+  test("refreshes the operation manifest after a missing or rejected query ID", async () => {
+    const storage = openStorage(":memory:");
+    const config = validateConfig();
+    const provider = new ManifestProvider(config, storage.manifests, undefined, undefined, async () => ({
+      ...DEFAULT_MANIFEST,
+      queryIds: { ...DEFAULT_MANIFEST.queryIds, search_timeline: "refreshed-search" },
+    }));
+    const requests: string[] = [];
+    const session = sessionFactory((request) => {
+      requests.push(request.url);
+      return request.url.includes("refreshed-search") ? response(tweetPayload()) : response("missing", 404);
+    })({ cookies: { auth_token: "a", ct0: "b" } });
+    const engine = new ApiEngine(config, provider, new GraphqlTransport(new TransactionIdProvider()));
+    await expect(engine.search(session, { searchQuery: "hello", limit: 1 })).resolves.toMatchObject({
+      tweets: [{ tweetId: "1" }],
+    });
+    expect(requests).toHaveLength(2);
     storage.database.close();
   });
 });

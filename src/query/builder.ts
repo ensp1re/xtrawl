@@ -9,6 +9,7 @@ export const OPERATION = {
   followers: "followers",
   following: "following",
   verifiedFollowers: "verified_followers",
+  tweetResult: "tweet_result",
 } as const;
 
 export function endpointFor(manifest: Manifest, operation: string): string {
@@ -98,6 +99,21 @@ export function buildFollowsParams(
     features: JSON.stringify(features),
     ...(Object.keys(manifest.fieldTogglesFor(operation)).length > 0
       ? { fieldToggles: JSON.stringify(manifest.fieldTogglesFor(operation)) }
+      : {}),
+  };
+}
+
+export function buildTweetResultParams(tweetId: string, manifest: Manifest): Record<string, string> {
+  return {
+    variables: JSON.stringify({
+      tweetId,
+      withCommunity: false,
+      includePromotedContent: false,
+      withVoice: false,
+    }),
+    features: JSON.stringify(manifest.featuresFor(OPERATION.tweetResult)),
+    ...(Object.keys(manifest.fieldTogglesFor(OPERATION.tweetResult)).length > 0
+      ? { fieldToggles: JSON.stringify(manifest.fieldTogglesFor(OPERATION.tweetResult)) }
       : {}),
   };
 }

@@ -9,7 +9,7 @@ import type {
   SearchRequest,
   TargetInput,
 } from "../domain/requests.js";
-import { AccountPoolExhausted, RunFailed } from "../domain/errors.js";
+import { AccountPoolExhausted, ConfigError, RunFailed } from "../domain/errors.js";
 import { mapProfile } from "../engine/extractors.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
@@ -41,7 +41,13 @@ export class XTrawl {
       leaseTtlMs: this.config.leaseTtlMs,
     });
     this.provision(options);
-    const manifests = new ManifestProvider(this.config, this.storage.manifests);
+    const manifestAccount = this.storage.accounts.list().find((account) => Boolean(account.authToken));
+    const manifests = new ManifestProvider(
+      this.config,
+      this.storage.manifests,
+      undefined,
+      manifestAccount?.authToken,
+    );
     const transactions = new TransactionIdProvider(options.transactionIdSource);
     const sessions = new SessionBuilder({
       bearerToken: this.config.bearerToken,
@@ -123,6 +129,12 @@ export class XTrawl {
       }
       return records;
     });
+  }
+
+  public async getTweet(target: string): Promise<TweetRecord | undefined> {
+    const tweetId = tweetIdFromTarget(target);
+    if (!tweetId) throw new ConfigError("Tweet lookup requires a numeric tweet ID or status URL.");
+    return this.pool.execute("tweet", ({ session }) => this.engine.tweetResult(session, tweetId));
   }
 
   public async getProfileTweets(
@@ -224,6 +236,15 @@ function toTarget(value: string | TargetInput): TargetInput {
   return typeof value === "string"
     ? { raw: value, username: value.replace(/^@/u, ""), source: "input" }
     : value;
+}
+
+function tweetIdFromTarget(value: string): string | undefined {
+  const target = value.trim();
+  if (/^\d+$/u.test(target)) return target;
+  const match = target.match(
+    /^https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[^/]+\/status\/(\d+)(?:[/?#].*)?$/u,
+  );
+  return match?.[1];
 }
 
 function shouldStop(

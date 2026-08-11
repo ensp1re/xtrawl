@@ -7,6 +7,7 @@ import {
   userPayload,
   profilePayload,
   followsPayload,
+  tweetResultPayload,
 } from "../helpers/fake-http.js";
 
 function createClient() {
@@ -19,6 +20,7 @@ function createClient() {
       sessionFactory((request) => {
         if (request.url.includes("UserByScreenName")) return response(userPayload());
         if (request.url.includes("UserTweets")) return response(profilePayload());
+        if (request.url.includes("TweetResultByRestId")) return response(tweetResultPayload());
         if (request.url.includes("Followers") || request.url.includes("Following"))
           return response(followsPayload());
         return response(tweetPayload("next"));
@@ -48,6 +50,17 @@ describe("public client", () => {
     expect((await client.getProfileTweets(["demo"], { limit: 1 })).tweets).toHaveLength(1);
     expect(await client.getFollowers(["demo"], { limit: 1 })).toHaveLength(1);
     expect(await client.getFollowing(["demo"], { limit: 1 })).toHaveLength(1);
+    client.close();
+  });
+
+  test("looks up a single tweet by ID or status URL", async () => {
+    const client = createClient();
+    await expect(client.getTweet("1")).resolves.toMatchObject({ tweetId: "1", text: "hello" });
+    await expect(client.getTweet("https://x.com/demo/status/1")).resolves.toMatchObject({
+      tweetId: "1",
+    });
+    await expect(client.getTweet("invalid")).rejects.toThrow("numeric tweet ID");
+    await expect(client.getTweet("https://example.com/demo/status/1")).rejects.toThrow("status URL");
     client.close();
   });
 

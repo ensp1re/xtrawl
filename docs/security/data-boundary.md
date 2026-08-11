@@ -9,7 +9,7 @@
 
 ## Network boundary
 
-- The client sends only read-oriented GraphQL GET requests and an optional home-page bootstrap request.
+- The client sends only read-oriented GraphQL query requests over GET or POST and an optional home-page bootstrap request.
 - The client does not expose mutation operations.
 - Proxies are normalized and passed to the HTTP adapter; proxy URLs are never emitted in diagnostics.
 - External payloads are parsed as `unknown` and narrowed before use.

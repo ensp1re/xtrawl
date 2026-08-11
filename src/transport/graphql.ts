@@ -13,12 +13,19 @@ export class GraphqlTransport {
     timeoutMs: number,
   ): Promise<GraphqlResponse> {
     try {
-      const transactionId = await this.transactions.get("GET", url);
-      const response = await session.get(url, {
-        query: params,
-        timeoutMs,
-        ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
-      });
+      const method = session.post ? "POST" : "GET";
+      const transactionId = await this.transactions.get(method, url);
+      const response = await (session.post
+        ? session.post(url, {
+            body: graphqlBody(params),
+            timeoutMs,
+            ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
+          })
+        : session.get(url, {
+            query: params,
+            timeoutMs,
+            ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
+          }));
       const body = await response.text();
       const snippet = body.slice(0, 240);
       let data: unknown = null;
@@ -58,6 +65,18 @@ export class GraphqlTransport {
       throw new NetworkError(error instanceof Error ? error.message : String(error), { endpoint: url });
     }
   }
+}
+
+function graphqlBody(params: Readonly<Record<string, string>>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) => {
+      try {
+        return [key, JSON.parse(value) as unknown];
+      } catch {
+        return [key, value];
+      }
+    }),
+  );
 }
 
 function mapGraphqlErrors(value: unknown): number | undefined {

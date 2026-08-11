@@ -22,13 +22,13 @@ persisting progress locally, and exposing predictable typed results.
 
 1. Provision one or more accounts from cookies, a JSON file, a dotenv file, or a delimited account file.
 2. Search public posts with structured filters, explicit date bounds, a result limit, and optional output persistence.
-3. Resolve user profiles, fetch profile timelines, and collect followers/following with cursor pagination.
+3. Resolve individual posts and user profiles, fetch profile timelines, and collect followers/following with cursor pagination.
 4. Reuse local SQLite state after restart, including account cooldowns, leases, run history, and resume cursors.
 5. Run the CLI or library with deterministic typed errors and no mutation of the remote account.
 
 ## First-release scope
 
-- Read-only search, user lookup, profile timelines, followers, following, and verified-followers endpoints.
+- Read-only search, single-post lookup, user lookup, profile timelines, followers, following, and verified-followers endpoints.
 - Cookie authentication using `auth_token` plus CSRF cookie, with token-only bootstrap when the platform supplies the CSRF cookie.
 - Per-account leases, daily request/tweet counters, cooldown classification, retry/backoff, and bounded concurrency.
 - Local SQLite state, resumable cursors, CSV/JSON output, structured CLI, and async library methods.
@@ -68,7 +68,7 @@ persisting progress locally, and exposing predictable typed results.
 - [x] All deterministic behavioral areas are covered: config, loaders, query construction, persistence, pooling, cooldowns, manifest, transport, parsing, runners, outputs, CLI, and client routing.
 - [x] The compiled CLI help and package smoke check run without credentials.
 - [x] Live tests are opt-in, use caller-supplied secrets only, perform read-only requests, and do not write secrets to the repository.
-- [ ] A profile lookup and bounded search can be completed with a valid authorized session; the live suite remains opt-in and was not run in this verification pass.
+- [x] A profile lookup, bounded search, profile timeline, single-post lookup, and all relationship operations complete with a valid authorized session in the opt-in live suite.
 - [x] Harness structural validation and context-budget evaluation pass.
 - [x] A fresh agent can identify the current work and next action from `.harness/state/` without chat history.
 
@@ -79,4 +79,4 @@ persisting progress locally, and exposing predictable typed results.
 
 ## Immediate next action
 
-Review the standalone project and, when network credentials are intentionally available, run the opt-in live integration suite.
+Keep the bundled manifest current and use the opt-in live suite after GraphQL protocol changes.

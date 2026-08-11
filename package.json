@@ -1,7 +1,7 @@
 {
   "name": "xtrawl",
   "version": "0.1.0",
-  "description": "Strictly typed read-only X scraper and crawler with account pooling and resumable output",
+  "description": "Scrape public X posts, profiles, followers, and following",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"

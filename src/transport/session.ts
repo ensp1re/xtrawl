@@ -57,6 +57,18 @@ class FetchSession implements HttpSession {
   }
 
   public async get(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
+    return this.request("GET", url, options);
+  }
+
+  public async post(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
+    return this.request("POST", url, options);
+  }
+
+  private async request(
+    method: "GET" | "POST",
+    url: string,
+    options: HttpRequestOptions,
+  ): Promise<HttpResponse> {
     const target = new URL(url);
     for (const [key, value] of Object.entries(options.query ?? {})) target.searchParams.set(key, value);
     const controller = new AbortController();
@@ -71,11 +83,13 @@ class FetchSession implements HttpSession {
         Referer: "https://x.com/",
         "User-Agent": this.userAgent,
         Cookie: cookieHeader(this.cookies),
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
         ...(options.headers ?? {}),
       };
       const init = {
-        method: "GET",
+        method,
         headers,
+        ...(method === "POST" && options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         redirect: options.redirect ?? "follow",
         signal: controller.signal,
         ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
@@ -90,7 +104,7 @@ class FetchSession implements HttpSession {
       };
     } catch (error) {
       throw new AccountSessionRuntimeError(
-        "http_get_failed",
+        method === "GET" ? "http_get_failed" : "http_post_failed",
         error instanceof Error ? error.message : String(error),
       );
     } finally {

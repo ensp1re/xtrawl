@@ -39,4 +39,29 @@ suite("live read-only checks", () => {
       client.close();
     }
   }, 60_000);
+
+  test("runs every remaining read operation with hard bounds", async () => {
+    const client = await XTrawl.create({
+      dbPath: ":memory:",
+      authToken: process.env.X_AUTH_TOKEN,
+      csrfToken: process.env.X_CSRF_TOKEN,
+    });
+    try {
+      const timeline = await client.getProfileTweets(["OpenAI"], {
+        limit: 1,
+        maxPagesPerProfile: 1,
+        maxEmptyPages: 1,
+      });
+      expect(timeline.tweets.length).toBeLessThanOrEqual(1);
+      const tweetId = timeline.tweets[0]?.tweetId;
+      if (tweetId) expect(await client.getTweet(tweetId)).toMatchObject({ tweetId });
+      expect(await client.getFollowers(["OpenAI"], { limit: 1, maxPagesPerProfile: 1 })).toHaveLength(1);
+      expect(await client.getFollowing(["OpenAI"], { limit: 1, maxPagesPerProfile: 1 })).toHaveLength(1);
+      expect(await client.getVerifiedFollowers(["OpenAI"], { limit: 1, maxPagesPerProfile: 1 })).toHaveLength(
+        1,
+      );
+    } finally {
+      client.close();
+    }
+  }, 120_000);
 });

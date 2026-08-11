@@ -2,6 +2,7 @@ import {
   buildFollowsParams,
   buildProfileTimelineParams,
   buildSearchParams,
+  buildTweetResultParams,
   buildUserLookupParams,
   endpointFor,
   targetUsername,
@@ -18,6 +19,7 @@ const manifest = createManifest({
     followers: "followers-id",
     following: "following-id",
     verified_followers: "verified-id",
+    tweet_result: "tweet-id",
   },
   endpoints: {
     search_timeline: "https://x.test/graphql/{query_id}",
@@ -26,6 +28,7 @@ const manifest = createManifest({
     followers: "https://x.test/graphql/{query_id}",
     following: "https://x.test/graphql/{query_id}",
     verified_followers: "https://x.test/graphql/{query_id}",
+    tweet_result: "https://x.test/graphql/{query_id}",
   },
   features: { shared: true },
   operationFeatures: { followers: { relationship: true } },
@@ -55,6 +58,12 @@ describe("typed GraphQL request builders", () => {
     expect(
       jsonValue(buildFollowsParams("u1", OPERATION.followers, manifest, "c", 5).variables),
     ).toMatchObject({ userId: "u1", cursor: "c" });
+    expect(jsonValue(buildTweetResultParams("123", manifest).variables)).toEqual({
+      tweetId: "123",
+      withCommunity: false,
+      includePromotedContent: false,
+      withVoice: false,
+    });
   });
 
   test("includes operation-specific feature and field toggle maps", () => {

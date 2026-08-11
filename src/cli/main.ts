@@ -25,7 +25,11 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
       let result: unknown;
       if (args.command === "search")
         result = await client.search(args.values[0] ?? "", searchRequestFromCli(args));
-      else if (args.command === "user-info") result = await client.getUserInfo(args.values);
+      else if (args.command === "tweet") {
+        const tweets = [];
+        for (const value of args.values) tweets.push(await client.getTweet(value));
+        result = tweets;
+      } else if (args.command === "user-info") result = await client.getUserInfo(args.values);
       else if (args.command === "profile-tweets")
         result = await client.getProfileTweets(args.values, collectionOptionsFromCli(args));
       else
