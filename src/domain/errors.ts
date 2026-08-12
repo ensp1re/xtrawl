@@ -26,6 +26,12 @@ export class ConfigError extends XTrawlError {
   }
 }
 
+export class AccountStateError extends XTrawlError {
+  public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
+    super("account_state_error", message, diagnostics);
+  }
+}
+
 export class ManifestError extends XTrawlError {
   public constructor(message: string) {
     super("manifest_error", message);

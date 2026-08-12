@@ -164,20 +164,22 @@ flowchart LR
     Parse --> Result["Typed records"]
     Result --> Output["stdout / CSV / JSON"]
 
-    State[("SQLite state")] <--> Client
-    State <--> Pool
-    State <--> Query
+    Accounts[("Account state store")] <--> Pool
+    SQLite[("SQLite runs and checkpoints")] <--> Client
+    SQLite <--> Query
+    Accounts -.->|SQLite by default| SQLite
 ```
 
-For each operation, XTrawl leases an eligible account from SQLite, verifies its proxy when configured,
+For each operation, XTrawl leases an eligible account from the configured account store, verifies its proxy when configured,
 creates an authenticated session, builds a read-only web request, and paginates until the requested
 limit or another stop condition is reached. Searches default to the previous 30 days and divide that
 interval into concurrent tasks. Failed requests use bounded backoff, account switching, and session
 repair. Responses enter the application as unknown data and are narrowed into typed records at the
 engine boundary.
 
-SQLite tracks account health, request usage, leases, run history, resumable cursors, and cached
-operation manifests. It does not store collected posts or profiles unless you explicitly enable file
+SQLite tracks run history, resumable cursors, cached operation manifests, and—by default—account
+health, request usage, and leases. Applications may replace only the account-state boundary with
+their own store. XTrawl does not store collected posts or profiles unless you explicitly enable file
 output.
 
 ## Use multiple accounts
@@ -249,6 +251,42 @@ using that account again.
 XTrawl does not perform username/password, email, or two-factor login. Supplying those fields without
 valid session cookies does not make an account eligible for requests.
 
+## Own account state
+
+TypeScript applications can keep accounts in their own database or secret store by implementing
+`AccountStateStore`. The adapter owns account records, atomic lease acquisition and completion, and
+atomic replacement. Its methods may be synchronous or asynchronous; custom stores must be supplied
+through `XTrawl.create()`:
+
+```ts
+import { XTrawl, type AccountStateStore } from "xtrawl";
+
+const accountStore: AccountStateStore = createMyAccountStore();
+
+const client = await XTrawl.create({
+  accountStore,
+  dbPath: "./state/runs-and-cursors.db",
+});
+```
+
+`dbPath` still holds run history, checkpoints, and manifest cache. Account credentials, health,
+limits, cooldowns, and leases use the custom store.
+
+You can also move reusable session state between stores:
+
+```ts
+const state = await client.accounts.exportState({ includeSecrets: true });
+await mySecretStore.set("xtrawl/accounts", state);
+
+const saved = await mySecretStore.get("xtrawl/accounts");
+await client.accounts.restoreState(saved, { mode: "merge" });
+```
+
+Export requires the explicit `includeSecrets: true` acknowledgement because the snapshot contains
+authentication tokens, cookies, bearer overrides, and proxy credentials. It excludes account IDs,
+active leases, passwords, email credentials, and two-factor secrets. `merge` updates matching
+usernames; `replace` atomically replaces all accounts. Never log or commit a snapshot.
+
 ## Resume and save output
 
 Set `resume: true` or pass `--resume` to persist pagination cursors. XTrawl clears a checkpoint after
@@ -260,10 +298,11 @@ append records, and generated filenames include the query/date range or collecti
 
 ## Manage local state
 
-The library exposes safe account and run maintenance through `client.db`. It can list redacted
-accounts, import accounts, assign proxies, repair or disable an account, clear expired leases and
-checkpoints, reset local counters, inspect run history, and remove a named account. Destructive
-duplicate cleanup is a dry run unless explicitly enabled.
+Use the async `client.accounts` facade for redacted account listing, import, proxy assignment,
+repair, deletion, and explicit state export/restore. It works with SQLite and custom stores.
+
+`client.db` provides SQLite-specific account maintenance plus run and checkpoint inspection.
+Destructive duplicate cleanup is a dry run unless explicitly enabled.
 
 ## Safety and limitations
 

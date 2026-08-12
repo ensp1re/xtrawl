@@ -1,17 +1,30 @@
 export { XTrawl } from "./client/client.js";
 export { XTrawlDatabase } from "./client/database.js";
+export { XTrawlAccounts } from "./client/accounts.js";
 export type { AccountImportOptions, AccountListOptions } from "./client/database.js";
 export type { ClientOptions } from "./client/types.js";
 export type { ClientConfig, ConfigInput } from "./config/types.js";
 export { validateConfig } from "./config/validation.js";
 export type {
   AccountInput,
+  AccountLease,
   AccountRecord,
+  AccountStatus,
   AccountSummary,
   AuthMaterial,
   CookieMap,
   ProxySettings,
 } from "./domain/accounts.js";
+export type {
+  AccountLeaseCompletion,
+  AccountLeaseRequest,
+  AccountStateExportOptions,
+  AccountStateRestoreOptions,
+  AccountStateSnapshot,
+  AccountStateSnapshotRecord,
+  AccountStateStore,
+  Awaitable,
+} from "./domain/account-state.js";
 export type {
   FollowRecord,
   ProfileRecord,
@@ -32,6 +45,7 @@ export type {
 } from "./domain/requests.js";
 export {
   AccountPoolExhausted,
+  AccountStateError,
   AuthError,
   ConfigError,
   EngineError,
@@ -43,6 +57,7 @@ export {
   ResumeError,
   RunFailed,
 } from "./domain/errors.js";
+export { parseAccountStateSnapshot } from "./auth/account-state.js";
 export { normalizeCookiesPayload, parseCookieHeader, parseNetscapeCookies } from "./auth/cookies.js";
 export {
   loadAccountsFile,

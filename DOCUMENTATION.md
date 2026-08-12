@@ -8,6 +8,7 @@ the command line. XTrawl is an authenticated, read-only collector for public X d
 - [Install](#install)
 - [Authenticate](#authenticate)
 - [Use multiple accounts](#use-multiple-accounts)
+- [Own account state](#own-account-state)
 - [Use a proxy](#use-a-proxy)
 - [Use the TypeScript API](#use-the-typescript-api)
 - [Search filters](#search-filters)
@@ -160,6 +161,64 @@ usable `auth_token` and `ct0` values. XTrawl does not perform interactive userna
 
 If you want to reuse accounts already stored in the configured SQLite database without provisioning
 new input, create the client with `provision: false`.
+
+## Own account state
+
+SQLite is the default account store. A TypeScript application can instead implement the exported
+`AccountStateStore` interface and keep account state in its own database, vault, or service:
+
+```ts
+import { XTrawl, type AccountStateStore } from "xtrawl";
+
+const accountStore: AccountStateStore = createMyAccountStore();
+
+const client = await XTrawl.create({
+  accountStore,
+  dbPath: "./state/runs-and-cursors.db",
+});
+```
+
+A custom store must be passed to `await XTrawl.create()`. The synchronous constructor rejects it
+because account provisioning and initialization may be asynchronous. `dbPath` remains active for
+run records, pagination checkpoints, and manifest caching; only account state moves to the adapter.
+
+The store owns these operations:
+
+| Method | Required behavior |
+| --- | --- |
+| `list`, `findByUsername`, `upsert`, `delete` | Persist records; `upsert` merges fields and cookie keys while preserving omitted fields |
+| `replaceAll` | Atomically replace all account records |
+| `acquireLease` | Atomically choose and lease one eligible account |
+| `renewLease` | Extend only the matching active lease |
+| `completeLease` | Atomically clear the lease, record usage, and apply health/cooldown state |
+
+Every method may return its result directly or in a promise. Lease operations must be atomic across
+all workers or processes sharing the store. The request passed to `acquireLease` includes the current
+time, generated lease ID, expiry, UTC date, authentication requirement, and configured daily limits.
+
+### Export and restore sessions
+
+Use `client.accounts` when the application needs to persist or transfer reusable session state:
+
+```ts
+const state = await client.accounts.exportState({ includeSecrets: true });
+await mySecretStore.set("xtrawl/accounts", state);
+
+const saved: unknown = await mySecretStore.get("xtrawl/accounts");
+await client.accounts.restoreState(saved, { mode: "merge" });
+```
+
+Snapshots are versioned and validated at restore time. They include cookies, authentication and
+CSRF tokens, optional bearer tokens and proxies, usage counters, cooldown state, and last-error
+metadata. They exclude storage IDs, active lease ownership, passwords, email credentials, and
+two-factor secrets. `merge` upserts by username. `replace` calls the store's atomic `replaceAll`.
+
+`includeSecrets: true` is intentionally required: exported state can authenticate as the supplied
+accounts. Keep snapshots in an encrypted caller-owned secret store and never print, log, or commit
+them.
+
+Other async account operations include `summary()`, `list()`, `get()`, `import()`, `setProxy()`,
+`repair()`, and `delete()`. Listings are redacted unless `revealSecrets` is explicitly requested.
 
 ## Use a proxy
 
@@ -652,7 +711,8 @@ XTrawl caches it in SQLite and can use a stale cached value when a refresh fails
 
 ## Understand storage and account health
 
-XTrawl uses SQLite for operational state:
+XTrawl uses SQLite for run, checkpoint, and manifest state. SQLite is also the default account-state
+adapter:
 
 - Provisioned accounts and their health status
 - Exclusive account leases and lease expiry
@@ -669,12 +729,23 @@ leased, is not cooling down, and remains within configured local limits. After t
 - A rate-limit, network, proxy, or transient failure applies the corresponding cooldown.
 - An authentication rejection marks the account unusable so it is not selected again.
 
-SQLite coordinates account leases so separate work does not intentionally use the same stored
-account at the same time.
+The selected account store coordinates leases so separate work does not intentionally use the same
+account at the same time. A custom implementation must provide the same atomic lease guarantees.
 
 ## Manage local state
 
-`client.db` provides scoped operational maintenance without exposing the storage implementation:
+`client.accounts` is the storage-independent async account facade:
+
+```ts
+console.log(await client.accounts.summary());
+console.log(await client.accounts.list({ eligibleOnly: true }));
+
+await client.accounts.setProxy("collector-one", "socks5://127.0.0.1:1080");
+await client.accounts.repair("collector-one", true);
+await client.accounts.delete("old-account");
+```
+
+`client.db` provides SQLite-specific account maintenance and the run/checkpoint APIs:
 
 ```ts
 console.log(client.db.accountsSummary());
@@ -703,6 +774,7 @@ Treat the following as sensitive:
 - `auth_token`, `ct0`, bearer overrides, and complete cookie jars
 - SQLite state files containing provisioned account records
 - Proxy URLs containing usernames or passwords
+- Account-state snapshots returned by `client.accounts.exportState()`
 - Collected output that may contain personal data
 
 Follow these rules:

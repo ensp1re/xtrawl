@@ -9,8 +9,8 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-08-11T00:00:00Z",
-  "updatedAt": "2026-08-11T19:50:18Z",
-  "nextAction": "TODO: design the extensibility milestone covering caller-owned account state, manual cursor pagination, and an MCP server for agent-harness operation.",
+  "updatedAt": "2026-08-12T12:52:30Z",
+  "nextAction": "TODO: add a low-level searchPage request that accepts an optional cursor and returns tweets plus nextCursor while keeping high-level search pagination automatic.",
   "blocker": null,
   "verification": {
     "passed": [
@@ -48,7 +48,8 @@
       "npm run verify (open-source community files and CI hardening)",
       "GitHub Actions Verify (pull request #4 and merged public main passed)",
       "anonymous GitHub API, README, and SECURITY.md access checks",
-      "GitHub public repository security configuration verification"
+      "GitHub public repository security configuration verification",
+      "npm run verify (caller-owned AccountStateStore, atomic lease completion, and versioned session export/restore; 111 deterministic tests passed and 3 credential-gated live tests skipped)"
     ],
     "failed": [
       "initial GitHub Actions run on Node.js 22.5.0 (bundled npm 10.8.2 exited before installing development dependencies)"

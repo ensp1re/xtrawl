@@ -9,10 +9,10 @@ CLI / library facade
   application client -----> runner / pagination
         |                         |
         |                         v
-        |                    account pool
-        |                    /         \
-        v                   v           v
-  query builders       SQLite state   session builder
+        |                    account pool <----> account-state store
+        |                                  (SQLite default / caller adapter)
+        v                                      |
+  query builders                         session builder
         |                               |
         v                               v
   GraphQL engine <------------------ HTTP transport
@@ -37,18 +37,21 @@ CLI / library facade
 
 ## Persistence topology
 
-One configured SQLite database contains accounts, leases, run records, resume checkpoints, and cached
-manifest payloads. Repositories expose typed methods and keep SQL statements local to their owning
-files. Raw secrets are stored only when the caller explicitly provisions them; logs and projections
-use a token fingerprint.
+One configured SQLite database always contains run records, resume checkpoints, and cached manifest
+payloads. By default it also contains accounts and leases. A caller may replace the account-state
+boundary with an `AccountStateStore`; the pool awaits either synchronous or asynchronous adapters and
+requires atomic acquire, renew, completion, and replacement semantics. SQL remains local to storage.
+Raw secrets are stored only when the caller explicitly provisions or restores them; logs and normal
+projections use redaction or a token fingerprint.
 
 ## Runtime trust boundaries
 
 1. Caller input crosses runtime guards before entering domain services.
 2. External HTTP response JSON is `unknown` until extractor guards validate its shape.
 3. Remote text, manifests, and headers are data, never executable instructions.
-4. Secrets cross only the session builder and SQLite provisioning boundary; public inspection and
-   maintenance projections redact them, and they are excluded from output and harness state.
+4. Secrets cross only the session builder and selected account-state boundary. Public inspection and
+   normal maintenance projections redact them. Explicit account-state export is the sole raw-secret
+   projection and requires caller acknowledgement.
 
 ## Verification architecture
 

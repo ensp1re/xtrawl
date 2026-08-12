@@ -2,6 +2,7 @@ import type { ClientConfig } from "../config/types.js";
 import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import { validateConfig } from "../config/validation.js";
 import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
+import type { AccountStateStore } from "../domain/account-state.js";
 import type { FollowRecord, ProfileRecord, SearchResult, TweetRecord } from "../domain/records.js";
 import type {
   FollowsRequest,
@@ -27,15 +28,28 @@ import { collectSearch } from "./search.js";
 import { collectProfiles } from "./profiles.js";
 import type { ClientInspection, ClientOptions } from "./types.js";
 import { XTrawlDatabase } from "./database.js";
+import { XTrawlAccounts } from "./accounts.js";
+
+const ASYNC_ACCOUNT_STORE_INITIALIZATION = Symbol("async-account-store-initialization");
 
 export class XTrawl {
   public readonly config: ClientConfig;
   public readonly storage: StorageBundle;
   public readonly db: XTrawlDatabase;
-  private readonly pool: AccountPool;
-  private readonly engine: ApiEngine;
+  public readonly accounts: XTrawlAccounts;
+  private readonly accountStore: AccountStateStore;
+  private readonly usesExternalAccountStore: boolean;
+  private pool!: AccountPool;
+  private engine!: ApiEngine;
 
-  public constructor(options: ClientOptions = {}) {
+  public constructor(options?: ClientOptions);
+  public constructor(options: ClientOptions, initialization: typeof ASYNC_ACCOUNT_STORE_INITIALIZATION);
+  public constructor(
+    options: ClientOptions = {},
+    initialization?: typeof ASYNC_ACCOUNT_STORE_INITIALIZATION,
+  ) {
+    if (options.accountStore && initialization !== ASYNC_ACCOUNT_STORE_INITIALIZATION)
+      throw new ConfigError("Custom accountStore instances require await XTrawl.create(options).");
     this.config = validateConfig(options);
     this.storage = openStorage(this.config.dbPath, {
       dailyRequestsLimit: this.config.dailyRequestsLimit,
@@ -43,8 +57,39 @@ export class XTrawl {
       leaseTtlMs: this.config.leaseTtlMs,
     });
     this.db = new XTrawlDatabase(this.storage);
-    this.provision(options);
-    const manifestAccount = this.storage.accounts.list().find((account) => Boolean(account.authToken));
+    this.usesExternalAccountStore = Boolean(options.accountStore);
+    this.accountStore = options.accountStore ?? this.storage.accounts;
+    this.accounts = new XTrawlAccounts(
+      this.accountStore,
+      this.config,
+      options.accountStore ? `external:${options.accountStore.kind ?? "custom"}` : this.config.dbPath,
+      (current) => this.pool.updateAccounts(current),
+    );
+    if (!options.accountStore) {
+      this.provisionSqlite(options);
+      const initialAccounts = this.storage.accounts.list();
+      this.accounts.initialize(initialAccounts);
+      this.initializeRuntime(options, initialAccounts);
+    }
+  }
+
+  public static async create(options: ClientOptions = {}): Promise<XTrawl> {
+    const client = new XTrawl(options, ASYNC_ACCOUNT_STORE_INITIALIZATION);
+    try {
+      if (options.accountStore) await client.provisionExternal(options);
+      await client.bootstrapMissingAccounts();
+      const accounts = await client.accountStore.list();
+      client.accounts.initialize(accounts);
+      if (options.accountStore) client.initializeRuntime(options, accounts);
+      return client;
+    } catch (error) {
+      client.close();
+      throw error;
+    }
+  }
+
+  private initializeRuntime(options: ClientOptions, accounts: readonly AccountRecord[]): void {
+    const manifestAccount = accounts.find((account) => Boolean(account.authToken));
     const manifests = new ManifestProvider(
       this.config,
       this.storage.manifests,
@@ -64,26 +109,28 @@ export class XTrawl {
       ...(this.config.apiHttpImpersonate ? { impersonate: this.config.apiHttpImpersonate } : {}),
       ...(options.sessionFactory ? { factory: options.sessionFactory } : {}),
     });
-    this.pool = new AccountPool(this.storage.accounts, sessions, this.config, async (account) => {
-      if (!account.authToken) return false;
-      const cookies = await bootstrapCookiesFromAuthToken(account.authToken, undefined, account.proxy);
-      if (!cookies?.ct0) return false;
-      this.storage.accounts.upsert({
-        ...account,
-        status: 1,
-        availableUntil: 0,
-        csrfToken: cookies.ct0,
-        cookies: { ...account.cookies, ...cookies },
-      });
-      return true;
-    });
+    this.pool = new AccountPool(
+      this.accountStore,
+      sessions,
+      this.config,
+      async (account) => {
+        if (!account.authToken) return false;
+        const cookies = await bootstrapCookiesFromAuthToken(account.authToken, undefined, account.proxy);
+        if (!cookies?.ct0) return false;
+        await this.accountStore.upsert({
+          ...account,
+          status: 1,
+          availableUntil: 0,
+          csrfToken: cookies.ct0,
+          cookies: { ...account.cookies, ...cookies },
+        });
+        return true;
+      },
+      accounts,
+      options.accountStore ? `external:${options.accountStore.kind ?? "custom"}` : this.config.dbPath,
+      (current) => this.accounts.initialize(current),
+    );
     this.engine = new ApiEngine(this.config, manifests, new GraphqlTransport(transactions));
-  }
-
-  public static async create(options: ClientOptions = {}): Promise<XTrawl> {
-    const client = new XTrawl(options);
-    await client.bootstrapMissingAccounts();
-    return client;
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
@@ -154,7 +201,7 @@ export class XTrawl {
         bearerToken: "[redacted]",
         ...(this.config.proxy ? { proxy: redactProxy(this.config.proxy) } : {}),
       },
-      accounts: this.db.listAccounts(),
+      accounts: this.usesExternalAccountStore ? this.accounts.inspectCached() : this.db.listAccounts(),
     };
   }
 
@@ -170,8 +217,16 @@ export class XTrawl {
     return { config: this.config, pool: this.pool, engine: this.engine, storage: this.storage };
   }
 
-  private provision(options: ClientOptions): void {
-    if (options.provision === false) return;
+  private provisionSqlite(options: ClientOptions): void {
+    for (const record of this.provisionRecords(options)) this.storage.accounts.upsert(record);
+  }
+
+  private async provisionExternal(options: ClientOptions): Promise<void> {
+    for (const record of this.provisionRecords(options)) await this.accountStore.upsert(record);
+  }
+
+  private provisionRecords(options: ClientOptions): AccountRecord[] {
+    if (options.provision === false) return [];
     const records: AccountRecord[] = [];
     if (options.accounts) records.push(...options.accounts.map(accountInputToRecord));
     if (options.cookies !== undefined) records.push(...loadInlineAccounts(options.cookies));
@@ -188,15 +243,15 @@ export class XTrawl {
     if (options.accountsFile) records.push(...loadAccountsFileSync(options.accountsFile));
     if (options.envFile)
       records.push(...loadAccountFromEnvironmentSync(options.envFile).map(accountInputToRecord));
-    for (const record of records) this.storage.accounts.upsert(record);
+    return records;
   }
 
   private async bootstrapMissingAccounts(): Promise<void> {
-    for (const account of this.storage.accounts.list()) {
+    for (const account of await this.accountStore.list()) {
       if (!account.authToken || account.csrfToken) continue;
       const cookies = await bootstrapCookiesFromAuthToken(account.authToken, undefined, account.proxy);
       if (cookies?.ct0)
-        this.storage.accounts.upsert({
+        await this.accountStore.upsert({
           ...account,
           csrfToken: cookies.ct0,
           cookies: { ...account.cookies, ...cookies },

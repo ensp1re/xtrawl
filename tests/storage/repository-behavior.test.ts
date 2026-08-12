@@ -51,8 +51,83 @@ describe("account repository policy boundaries", () => {
 
   test("round-trips string proxies and preserves operational fields", () => {
     const storage = openStorage(":memory:");
-    storage.accounts.upsert(account("proxy", { proxy: "127.0.0.1:8080" }));
-    expect(storage.accounts.findByUsername("proxy")?.proxy).toBe("127.0.0.1:8080");
+    storage.accounts.upsert({
+      ...account("proxy", {
+        proxy: "127.0.0.1:8080",
+      }),
+      status: 2,
+      availableUntil: 10,
+      dailyRequests: 2,
+      dailyTweets: 3,
+      totalTweets: 4,
+      lastUsed: 5,
+      lastErrorCode: 429,
+      cooldownReason: "rate_limit",
+    });
+    expect(storage.accounts.findByUsername("proxy")).toMatchObject({
+      proxy: "127.0.0.1:8080",
+      status: 2,
+      availableUntil: 10,
+      dailyRequests: 2,
+      dailyTweets: 3,
+      totalTweets: 4,
+      lastUsed: 5,
+      lastErrorCode: 429,
+      cooldownReason: "rate_limit",
+    });
+    storage.database.close();
+  });
+
+  test("atomically completes usage and health for a lease", () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(account("complete"));
+    const lease = storage.accounts.acquireLease({
+      now: 100,
+      leaseId: "lease",
+      leaseExpiresAt: 200,
+      utcDate: "2026-08-12",
+      requireAuthMaterial: true,
+      dailyRequestsLimit: 30,
+      dailyTweetsLimit: 600,
+    });
+    expect(
+      storage.accounts.completeLease({
+        leaseId: lease!.leaseId,
+        now: 110,
+        utcDate: "2026-08-12",
+        pages: 1,
+        tweets: 2,
+        status: "cooling_down",
+        availableUntil: 500,
+        lastErrorCode: 429,
+        cooldownReason: "rate_limit",
+      }),
+    ).toBe(true);
+    expect(storage.accounts.findByUsername("complete")).toMatchObject({
+      dailyRequests: 1,
+      dailyTweets: 2,
+      totalTweets: 2,
+      status: 2,
+      availableUntil: 500,
+      lastUsed: 110,
+      lastErrorCode: 429,
+      cooldownReason: "rate_limit",
+    });
+    expect(storage.accounts.findByUsername("complete")?.leaseId).toBeUndefined();
+    storage.database.close();
+  });
+
+  test("atomically replaces the exact account set", () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(account("original"));
+    expect(() => storage.accounts.replaceAll([account("duplicate"), account("duplicate")])).toThrow();
+    expect(storage.accounts.list().map((value) => value.username)).toEqual(["original"]);
+
+    storage.accounts.replaceAll([
+      account("first", { authToken: "shared" }),
+      account("second", { authToken: "shared" }),
+    ]);
+    expect(storage.accounts.list().map((value) => value.username)).toEqual(["first", "second"]);
     storage.database.close();
   });
 });

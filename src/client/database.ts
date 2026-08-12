@@ -138,7 +138,7 @@ export class XTrawlDatabase {
   }
 }
 
-function redactAccount(
+export function redactAccount(
   account: AccountRecord,
   options: Pick<AccountListOptions, "includeCookies" | "revealSecrets">,
 ): Record<string, unknown> {

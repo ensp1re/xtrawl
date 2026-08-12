@@ -1,7 +1,10 @@
-import type { AccountLease } from "../domain/accounts.js";
+import { randomUUID } from "node:crypto";
+import type { AccountLease, AccountRecord, AccountSummary } from "../domain/accounts.js";
+import type { AccountLeaseCompletion, AccountStateStore } from "../domain/account-state.js";
 import {
   AccountPoolExhausted,
   AccountSessionBuildError,
+  AccountStateError,
   AuthError,
   XTrawlError,
   NetworkError,
@@ -10,7 +13,6 @@ import {
 } from "../domain/errors.js";
 import type { ClientConfig } from "../config/types.js";
 import type { HttpSession } from "../domain/http.js";
-import type { AccountRepository } from "../storage/account-repository.js";
 import { computeCooldown } from "./cooldown.js";
 import type { SessionBuilder } from "../transport/session.js";
 import { isRecord } from "../utils/guards.js";
@@ -31,13 +33,19 @@ export type AccountRepair = (account: AccountLease) => Promise<boolean>;
 
 export class AccountPool {
   private readonly limiters = new Map<string, TokenBucketLimiter>();
+  private cachedSummary: AccountSummary;
 
   public constructor(
-    private readonly repository: AccountRepository,
+    private readonly repository: AccountStateStore,
     private readonly sessions: SessionBuilder,
     private readonly config: ClientConfig,
     private readonly repairAccount?: AccountRepair,
-  ) {}
+    initialAccounts: readonly AccountRecord[] = [],
+    private readonly storeLocation = `external:${repository.kind ?? "custom"}`,
+    private readonly onAccountsChanged?: (accounts: readonly AccountRecord[]) => void,
+  ) {
+    this.cachedSummary = summarizeAccounts(initialAccounts, this.config, this.storeLocation);
+  }
 
   public async execute<T>(
     label: string,
@@ -49,7 +57,16 @@ export class AccountPool {
     let lastError: unknown;
     let repairs = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const account = this.repository.lease({ requireAuthMaterial: true });
+      const now = Date.now();
+      const account = await this.repository.acquireLease({
+        now,
+        leaseId: randomUUID(),
+        leaseExpiresAt: now + this.config.leaseTtlMs,
+        utcDate: utcDate(now),
+        requireAuthMaterial: true,
+        dailyRequestsLimit: this.config.dailyRequestsLimit,
+        dailyTweetsLimit: this.config.dailyTweetsLimit,
+      });
       if (!account) {
         if (lastError) throw lastError;
         throw new AccountPoolExhausted(`No eligible account for ${label}.`);
@@ -58,12 +75,18 @@ export class AccountPool {
       seenAccounts.add(accountKey);
       const switchLimit = options.maxAccountSwitches ?? this.config.maxAccountSwitches;
       if (seenAccounts.size > switchLimit + 1) {
-        this.repository.release(account.leaseId, { status: "healthy" });
+        await this.completeLease(account, {
+          status: "healthy",
+          availableUntil: 0,
+          pages: 0,
+          tweets: 0,
+        });
         if (lastError) throw lastError;
         throw new AccountPoolExhausted(`Account-switch limit reached for ${label}.`);
       }
       let session: HttpSession | undefined;
       let operationStarted = false;
+      let leaseCompleted = false;
       const heartbeat = this.startHeartbeat(account);
       try {
         if (this.config.proxyCheckOnLease)
@@ -75,17 +98,22 @@ export class AccountPool {
         await this.limiterFor(account).acquire();
         operationStarted = true;
         const value = await operation({ account, session });
-        this.repository.recordUsage(
-          account.leaseId,
-          1,
-          Math.max(0, options.countTweets?.(value) ?? countTweets(value)),
-        );
-        this.repository.release(account.leaseId, { status: "healthy" });
+        await this.completeLease(account, {
+          status: "healthy",
+          availableUntil: 0,
+          pages: 1,
+          tweets: Math.max(0, options.countTweets?.(value) ?? countTweets(value)),
+        });
+        leaseCompleted = true;
         return value;
       } catch (error) {
         lastError = error;
-        if (operationStarted) this.repository.recordUsage(account.leaseId, 1, 0);
-        this.releaseFailure(account, error);
+        if (!leaseCompleted)
+          await this.completeLease(account, {
+            ...this.failureCompletion(error),
+            pages: operationStarted ? 1 : 0,
+            tweets: 0,
+          });
         if (error instanceof AuthError && this.repairAccount && repairs < this.config.maxFallbackAttempts) {
           repairs += 1;
           await this.repairAccount(account).catch(() => false);
@@ -104,10 +132,20 @@ export class AccountPool {
   }
 
   public get summary() {
-    return this.repository.summary();
+    if (!this.storeLocation.startsWith("external:")) {
+      const current = this.repository.list();
+      if (Array.isArray(current)) this.updateAccounts(current);
+    }
+    return this.cachedSummary;
   }
 
-  private releaseFailure(account: AccountLease, error: unknown): void {
+  public updateAccounts(accounts: readonly AccountRecord[]): void {
+    this.cachedSummary = summarizeAccounts(accounts, this.config, this.storeLocation);
+  }
+
+  private failureCompletion(
+    error: unknown,
+  ): Pick<AccountLeaseCompletion, "status" | "availableUntil" | "lastErrorCode" | "cooldownReason"> {
     const status =
       error instanceof XTrawlError && typeof error.diagnostics.statusCode === "number"
         ? error.diagnostics.statusCode
@@ -135,15 +173,44 @@ export class AccountPool {
         : {}),
       jitterMs: this.config.cooldownJitterMs,
     });
-    this.repository.release(account.leaseId, decision);
+    return {
+      status: decision.status,
+      availableUntil: decision.availableUntil,
+      ...(decision.lastErrorCode === undefined ? {} : { lastErrorCode: decision.lastErrorCode }),
+      ...(decision.reason === undefined ? {} : { cooldownReason: decision.reason }),
+    };
+  }
+
+  private async completeLease(
+    account: AccountLease,
+    completion: Omit<AccountLeaseCompletion, "leaseId" | "now" | "utcDate">,
+  ): Promise<void> {
+    const now = Date.now();
+    const completed = await this.repository.completeLease({
+      ...completion,
+      leaseId: account.leaseId,
+      now,
+      utcDate: utcDate(now),
+    });
+    if (!completed)
+      throw new AccountStateError("The account lease could not be completed.", {
+        account: account.username,
+      });
+    await this.refreshSummary().catch(() => undefined);
   }
 
   private startHeartbeat(account: AccountLease): ReturnType<typeof setInterval> | undefined {
     if (this.config.leaseHeartbeatMs <= 0) return undefined;
-    const timer = setInterval(
-      () => this.repository.heartbeat(account.leaseId, this.config.leaseTtlMs),
-      this.config.leaseHeartbeatMs,
-    );
+    let pending = false;
+    const timer = setInterval(() => {
+      if (pending) return;
+      pending = true;
+      void Promise.resolve(this.repository.renewLease(account.leaseId, Date.now() + this.config.leaseTtlMs))
+        .catch(() => false)
+        .finally(() => {
+          pending = false;
+        });
+    }, this.config.leaseHeartbeatMs);
     timer.unref();
     return timer;
   }
@@ -156,6 +223,39 @@ export class AccountPool {
     this.limiters.set(key, limiter);
     return limiter;
   }
+
+  private async refreshSummary(): Promise<void> {
+    const accounts = await this.repository.list();
+    this.updateAccounts(accounts);
+    this.onAccountsChanged?.(accounts);
+  }
+}
+
+export function summarizeAccounts(
+  accounts: readonly AccountRecord[],
+  config: Pick<ClientConfig, "dailyRequestsLimit" | "dailyTweetsLimit">,
+  location: string,
+  now = Date.now(),
+): AccountSummary {
+  return {
+    dbPath: location,
+    total: accounts.length,
+    eligible: accounts.filter(
+      (account) =>
+        account.status !== 0 &&
+        !(account.status === 2 && (account.availableUntil ?? 0) > now) &&
+        Boolean(account.authToken && account.csrfToken) &&
+        (account.dailyRequests ?? 0) < config.dailyRequestsLimit &&
+        (account.dailyTweets ?? 0) < config.dailyTweetsLimit,
+    ).length,
+    unusable: accounts.filter((account) => account.status === 0).length,
+    coolingDown: accounts.filter((account) => account.status === 2 && (account.availableUntil ?? 0) > now)
+      .length,
+  };
+}
+
+function utcDate(now: number): string {
+  return new Date(now).toISOString().slice(0, 10);
 }
 
 function countTweets(value: unknown): number {

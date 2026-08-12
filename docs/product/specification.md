@@ -25,6 +25,8 @@ persisting progress locally, and exposing predictable typed results.
 3. Resolve individual posts and user profiles, fetch profile timelines, and collect followers/following with cursor pagination.
 4. Reuse local SQLite state after restart, including account cooldowns, leases, run history, and resume cursors.
 5. Run the CLI or library with deterministic typed errors and no mutation of the remote account.
+6. Replace SQLite account persistence with a caller-owned store and explicitly export or restore
+   reusable session state without restoring stale leases or login-only credentials.
 
 ## First-release scope
 
@@ -39,6 +41,8 @@ persisting progress locally, and exposing predictable typed results.
 - Optional transaction-header generation, HTTP/HTTPS/SOCKS5 proxies with preflight checks, appendable
   descriptive outputs, and redacted local-state maintenance APIs.
 - Strict TypeScript interfaces, runtime guards at external boundaries, and test doubles for all network paths.
+- A pluggable sync-or-async account-state contract with atomic lease operations; SQLite remains the
+  default adapter while run history, checkpoints, and manifest cache remain local.
 
 ## Explicit exclusions
 
@@ -76,11 +80,15 @@ persisting progress locally, and exposing predictable typed results.
 - [x] A profile lookup, bounded search, profile timeline, single-post lookup, and all relationship operations complete with a valid authorized session in the opt-in live suite.
 - [x] Harness structural validation and context-budget evaluation pass.
 - [x] A fresh agent can identify the current work and next action from `.harness/state/` without chat history.
+- [x] A caller-owned asynchronous account store can provision, lease, complete, export, and restore
+  account state through the public API, with deterministic contract tests.
 
 ## Open decisions
 
 - The built-in Node SQLite API is the first-release persistence adapter; a portable driver can be added only if supported-runtime evidence requires it.
 - Async methods are the canonical library surface. A blocking synchronous wrapper is intentionally excluded because it would compromise Node event-loop safety.
+- Account-state snapshots require an explicit secret acknowledgement, are runtime validated and
+  versioned, and exclude active leases plus password, email-password, and two-factor login fields.
 
 ## Immediate next action
 
