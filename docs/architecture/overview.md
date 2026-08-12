@@ -32,7 +32,9 @@ CLI / library facade
 - `pool` owns per-page leases, heartbeats, cooldowns, token-bucket spacing, retries, session repair,
   proxy preflight, and account selection.
 - `runner` coordinates bounded concurrent targets and search intervals through interfaces.
-- `client` composes concrete adapters and exposes the stable public API.
+- `client` composes concrete adapters and exposes the stable public API. Its low-level search-page
+  primitive performs one pooled page request; high-level search adds scheduling, deduplication,
+  checkpoints, output, and run statistics around that same primitive.
 - `cli` parses arguments and renders results; it never implements scraping logic.
 
 ## Persistence topology

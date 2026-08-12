@@ -29,6 +29,7 @@ export type {
   FollowRecord,
   ProfileRecord,
   RunStats,
+  SearchPageResult,
   SearchResult,
   TweetMedia,
   TweetRecord,
@@ -37,6 +38,7 @@ export type {
 export type {
   FollowsRequest,
   ProfileTimelineRequest,
+  SearchPageRequest,
   SearchRequest,
   TargetInput,
   UserInfoRequest,

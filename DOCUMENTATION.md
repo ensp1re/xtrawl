@@ -317,6 +317,39 @@ operators and combined with that query. If neither date bound is supplied, XTraw
 previous 30 days. A bounded interval is split into up to `searchSplits` tasks and processed with the
 available account concurrency.
 
+### Request one search page
+
+Use `searchPage()` when the caller needs to own cursor persistence and pagination:
+
+```ts
+import type { SearchPageRequest } from "xtrawl";
+
+const filters = {
+  since: "2026-08-01",
+  until: "2026-08-12",
+  fromUsers: ["OpenAI"],
+  minLikes: 10,
+  displayType: "Latest",
+} satisfies SearchPageRequest;
+
+let cursor: string | undefined;
+do {
+  const page = await client.searchPage("typescript", { ...filters, cursor });
+  await saveTweets(page.tweets);
+  cursor = page.nextCursor;
+} while (cursor);
+```
+
+Each call requests one logical page through the normal account pool, including bounded retries,
+account switching, cooldowns, and usage accounting. The returned `nextCursor` is opaque: store it
+without modifying it and send it back with the same query, filters, display type, and date bounds.
+
+`SearchPageRequest` supports all search filters plus `cursor` and `maxAccountSwitches`. It excludes
+high-level controls such as `limit`, `resume`, `save`, and `maxEmptyPages`. `searchPage()` does not
+split the date interval, write files, create a run record, or read and update SQLite checkpoints.
+Use `search()` for automatic multi-page scheduling, deduplication, limits, resume state, output, and
+run statistics.
+
 ### Read profile information
 
 ```ts
@@ -549,6 +582,10 @@ updates it as pagination advances. Checkpoint identity includes the operation an
 so a materially different request starts from its own checkpoint. A successfully completed operation
 clears its checkpoint.
 
+For caller-managed search pagination, use `searchPage()`. Save its `nextCursor` in your own state and
+pass it to the next call. This page-level API never reads or writes XTrawl checkpoints; the caller is
+responsible for stopping when `nextCursor` is `undefined` and for avoiding repeated cursors.
+
 For profile and relationship methods, `initialCursors` can provide an explicit cursor keyed by the
 target identity. An explicit initial cursor takes precedence over a stored checkpoint.
 
@@ -632,6 +669,20 @@ interface SearchResult {
 `TweetRecord` includes the post ID, author, timestamp, text, engagement counts, image links, post URL,
 and optional raw source data when available. `RunStats` reports collected count, task counts,
 failures, and retries.
+
+### `SearchPageResult`
+
+`searchPage()` returns one normalized page and its opaque continuation cursor:
+
+```ts
+interface SearchPageResult {
+  readonly tweets: readonly TweetRecord[];
+  readonly nextCursor: string | undefined;
+}
+```
+
+The number of posts requested per page comes from `apiPageSize`. The remote endpoint may return
+fewer records.
 
 ### `ProfileRecord`
 

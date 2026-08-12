@@ -34,6 +34,11 @@ export interface SearchResult {
   readonly stats: RunStats;
 }
 
+export interface SearchPageResult {
+  readonly tweets: readonly TweetRecord[];
+  readonly nextCursor: string | undefined;
+}
+
 export interface ProfileRecord {
   readonly input: { readonly raw?: string; readonly source?: string };
   readonly userId?: string;
