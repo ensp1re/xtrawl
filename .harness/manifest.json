@@ -8,7 +8,7 @@
   "sources": {
     "instructions": ["AGENTS.md"],
     "product": ["docs/product/specification.md"],
-    "architecture": ["docs/architecture/overview.md", "docs/decisions/0001-runtime-and-state.md", "docs/decisions/0002-modular-boundaries.md"],
+    "architecture": ["docs/architecture/overview.md", "docs/decisions/0001-runtime-and-state.md", "docs/decisions/0002-modular-boundaries.md", "docs/decisions/0003-caller-owned-account-state.md"],
     "security": ["docs/security/data-boundary.md"],
     "workState": ".harness/state/work.json",
     "handoff": ".harness/state/handoff.json",

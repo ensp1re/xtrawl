@@ -2,6 +2,7 @@ import type { ConfigInput, ClientConfig } from "../config/types.js";
 import type { AccountInput } from "../domain/accounts.js";
 import type { TransactionIdSource } from "../transport/transaction-id.js";
 import type { SessionFactory } from "../domain/http.js";
+import type { AccountStateStore } from "../domain/account-state.js";
 
 export interface ClientOptions extends ConfigInput {
   readonly cookiesFile?: string;
@@ -14,6 +15,7 @@ export interface ClientOptions extends ConfigInput {
   readonly provision?: boolean;
   readonly sessionFactory?: SessionFactory;
   readonly transactionIdSource?: TransactionIdSource;
+  readonly accountStore?: AccountStateStore;
 }
 
 export interface ClientInspection {

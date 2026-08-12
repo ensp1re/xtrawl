@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { XTrawl } from "../../src/client/client.js";
 import { AccountPoolExhausted, RunFailed } from "../../src/domain/errors.js";
+import { AccountStateError } from "../../src/domain/errors.js";
+import type { AccountStateStore } from "../../src/domain/account-state.js";
+import type { AccountRepository } from "../../src/storage/account-repository.js";
+import { openStorage } from "../../src/storage/index.js";
 import {
   sessionFactory,
   response,
@@ -30,6 +34,20 @@ function createClient() {
         return response(tweetPayload("next"));
       })(options),
   });
+}
+
+function asynchronousStore(repository: AccountRepository): AccountStateStore {
+  return {
+    kind: "test-memory",
+    list: () => Promise.resolve(repository.list()),
+    findByUsername: (username) => Promise.resolve(repository.findByUsername(username)),
+    upsert: (account) => Promise.resolve(repository.upsert(account)),
+    delete: (username) => Promise.resolve(repository.delete(username)),
+    replaceAll: (accounts) => Promise.resolve(repository.replaceAll(accounts)),
+    acquireLease: (request) => Promise.resolve(repository.acquireLease(request)),
+    renewLease: (leaseId, leaseExpiresAt) => Promise.resolve(repository.renewLease(leaseId, leaseExpiresAt)),
+    completeLease: (completion) => Promise.resolve(repository.completeLease(completion)),
+  };
 }
 
 describe("public client", () => {
@@ -158,5 +176,74 @@ describe("public client", () => {
     await expect(client.search("hello")).rejects.toThrow(RunFailed);
     expect(client.storage.runs.list()[0]?.status).toBe("failed");
     client.close();
+  });
+
+  test("uses a caller-owned async account store", async () => {
+    const external = openStorage(":memory:");
+    const accountStore = asynchronousStore(external.accounts);
+    expect(() => new XTrawl({ dbPath: ":memory:", accountStore })).toThrow("await XTrawl.create");
+    const client = await XTrawl.create({
+      dbPath: ":memory:",
+      minDelayMs: 0,
+      cooldownJitterMs: 0,
+      accountStore,
+      accounts: [
+        {
+          username: "external",
+          password: "not-exported",
+          email: "not-exported@example.test",
+          emailPassword: "not-exported",
+          twoFactorSecret: "not-exported",
+          authToken: "external-auth",
+          csrfToken: "external-csrf",
+          cookies: { auth_token: "external-auth", ct0: "external-csrf" },
+        },
+      ],
+      sessionFactory: (options) => sessionFactory(() => response(tweetPayload("next")))(options),
+    });
+
+    await expect(client.search("hello", { limit: 1 })).resolves.toMatchObject({
+      tweets: [expect.objectContaining({ tweetId: "1" })],
+    });
+    expect(external.accounts.findByUsername("external")?.dailyRequests).toBe(1);
+    expect(client.poolSummary.dbPath).toBe("external:test-memory");
+
+    const snapshot = await client.accounts.exportState({ includeSecrets: true });
+    expect(snapshot.accounts[0]).toMatchObject({
+      username: "external",
+      authToken: "external-auth",
+      csrfToken: "external-csrf",
+    });
+    expect(snapshot.accounts[0]).not.toHaveProperty("password");
+    expect(snapshot.accounts[0]).not.toHaveProperty("email");
+    expect(snapshot.accounts[0]).not.toHaveProperty("emailPassword");
+    expect(snapshot.accounts[0]).not.toHaveProperty("twoFactorSecret");
+    expect(snapshot.accounts[0]).not.toHaveProperty("leaseId");
+
+    const restoredStorage = openStorage(":memory:");
+    const restored = await XTrawl.create({
+      dbPath: ":memory:",
+      provision: false,
+      accountStore: asynchronousStore(restoredStorage.accounts),
+    });
+    await expect(restored.accounts.restoreState(snapshot, { mode: "replace" })).resolves.toEqual({
+      restored: 1,
+      mode: "replace",
+    });
+    expect(restoredStorage.accounts.findByUsername("external")?.authToken).toBe("external-auth");
+    expect(restoredStorage.accounts.findByUsername("external")?.dailyRequests).toBe(1);
+    await expect(restored.accounts.restoreState({ schemaVersion: 2 })).rejects.toThrow(AccountStateError);
+    await expect(
+      restored.accounts.restoreState({
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        accounts: [{ username: "bad", cookies: { ct0: 123 } }],
+      }),
+    ).rejects.toThrow("cookie values must be strings");
+
+    restored.close();
+    restoredStorage.database.close();
+    client.close();
+    external.database.close();
   });
 });
