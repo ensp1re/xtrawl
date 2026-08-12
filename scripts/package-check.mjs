@@ -12,7 +12,7 @@ for (const relative of required) {
 if (packageJson.name !== "xtrawl") {
   throw new Error("unexpected package name");
 }
-if (packageJson.version !== "0.1.1") {
+if (packageJson.version !== "0.1.2") {
   throw new Error("unexpected package version");
 }
 if (packageJson.license !== "MIT") {

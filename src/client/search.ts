@@ -1,7 +1,7 @@
 import type { ClientConfig } from "../config/types.js";
 import { RunFailed, XTrawlError } from "../domain/errors.js";
-import type { SearchResult, TweetRecord } from "../domain/records.js";
-import type { SearchRequest } from "../domain/requests.js";
+import type { SearchPageResult, SearchResult, TweetRecord } from "../domain/records.js";
+import type { SearchPageRequest, SearchRequest } from "../domain/requests.js";
 import type { ApiEngine } from "../engine/api-engine.js";
 import type { AccountPool } from "../pool/account-pool.js";
 import { queryHash } from "../query/hash.js";
@@ -20,6 +20,25 @@ export interface SearchContext {
 interface SearchTask {
   readonly id: string;
   readonly request: SearchRequest;
+}
+
+interface PageExecutionOptions {
+  readonly cursor?: string;
+  readonly maxAccountSwitches?: number;
+  readonly onRetry?: () => void;
+}
+
+export async function collectSearchPage(
+  context: SearchContext,
+  query: string,
+  options: SearchPageRequest,
+): Promise<SearchPageResult> {
+  const { cursor, maxAccountSwitches, ...searchOptions } = options;
+  const request = withDefaultBounds({
+    ...searchOptions,
+    ...(query ? { searchQuery: query } : {}),
+  });
+  return requestSearchPage(context, request, { cursor, maxAccountSwitches });
 }
 
 export async function collectSearch(
@@ -56,16 +75,12 @@ export async function collectSearch(
       let cursor = cursors.get(task.id);
       let emptyPages = 0;
       while (!limitReached) {
-        const page = await context.pool.execute(
-          "search",
-          ({ session }) => context.engine.search(session, task.request, cursor),
-          {
-            countTweets: (value) => value.tweets.length,
-            onRetry: () => {
-              poolRetries += 1;
-            },
+        const page = await requestSearchPage(context, task.request, {
+          cursor,
+          onRetry: () => {
+            poolRetries += 1;
           },
-        );
+        });
         let added = 0;
         for (const tweet of page.tweets) {
           const previousSize = tweets.size;
@@ -77,12 +92,12 @@ export async function collectSearch(
           }
         }
         emptyPages = added === 0 ? emptyPages + 1 : 0;
-        if (page.cursor) {
-          cursors.set(task.id, page.cursor);
-          if (request.resume) context.storage.checkpoints.save(task.id, { root: page.cursor });
+        if (page.nextCursor) {
+          cursors.set(task.id, page.nextCursor);
+          if (request.resume) context.storage.checkpoints.save(task.id, { root: page.nextCursor });
         }
-        if (!page.cursor || emptyPages >= (request.maxEmptyPages ?? context.config.maxEmptyPages)) break;
-        cursor = page.cursor;
+        if (!page.nextCursor || emptyPages >= (request.maxEmptyPages ?? context.config.maxEmptyPages)) break;
+        cursor = page.nextCursor;
       }
       if (!limitReached) context.storage.checkpoints.clear(task.id);
     });
@@ -123,6 +138,23 @@ export async function collectSearch(
       ? error
       : new RunFailed(error instanceof Error ? error.message : String(error));
   }
+}
+
+async function requestSearchPage(
+  context: SearchContext,
+  request: SearchRequest,
+  options: PageExecutionOptions = {},
+): Promise<SearchPageResult> {
+  const page = await context.pool.execute(
+    "search",
+    ({ session }) => context.engine.search(session, request, options.cursor),
+    {
+      countTweets: (value) => value.tweets.length,
+      ...(options.onRetry ? { onRetry: options.onRetry } : {}),
+      ...(options.maxAccountSwitches === undefined ? {} : { maxAccountSwitches: options.maxAccountSwitches }),
+    },
+  );
+  return { tweets: page.tweets, nextCursor: page.cursor };
 }
 
 export function withDefaultBounds(request: SearchRequest, now = new Date()): SearchRequest {

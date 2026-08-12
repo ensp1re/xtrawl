@@ -41,6 +41,14 @@ export interface SearchRequest {
   readonly maxEmptyPages?: number;
 }
 
+export type SearchPageRequest = Omit<
+  SearchRequest,
+  "limit" | "resume" | "save" | "saveFormat" | "saveDir" | "saveName" | "maxEmptyPages"
+> & {
+  readonly cursor?: string;
+  readonly maxAccountSwitches?: number;
+};
+
 export interface TargetInput {
   readonly raw?: string;
   readonly username?: string;

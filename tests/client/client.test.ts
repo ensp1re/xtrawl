@@ -67,6 +67,49 @@ describe("public client", () => {
     client.close();
   });
 
+  test("returns one search page and accepts a caller-owned cursor", async () => {
+    const requestBodies: unknown[] = [];
+    let pageNumber = 0;
+    const client = new XTrawl({
+      dbPath: ":memory:",
+      requestsPerMinute: 60_000,
+      minDelayMs: 0,
+      cookies: { auth_token: "auth", ct0: "csrf" },
+      sessionFactory: (options) =>
+        sessionFactory((request) => {
+          requestBodies.push(request.options.body);
+          pageNumber += 1;
+          return response(tweetPayload(`cursor-${pageNumber}`));
+        })(options),
+    });
+
+    const first = await client.searchPage("typescript", {
+      since: "2026-08-01",
+      until: "2026-08-12",
+      fromUsers: ["OpenAI"],
+      displayType: "Latest",
+    });
+    const second = await client.searchPage("typescript", {
+      since: "2026-08-01",
+      until: "2026-08-12",
+      fromUsers: ["OpenAI"],
+      displayType: "Latest",
+      cursor: first.nextCursor,
+    });
+
+    expect(first).toMatchObject({ tweets: [{ tweetId: "1" }], nextCursor: "cursor-1" });
+    expect(second.nextCursor).toBe("cursor-2");
+    expect(requestBodies).toHaveLength(2);
+    expect(searchVariables(requestBodies[0])).toMatchObject({
+      rawQuery: expect.stringContaining("typescript"),
+      product: "Latest",
+    });
+    expect(searchVariables(requestBodies[1])).toMatchObject({ cursor: "cursor-1" });
+    expect(client.storage.runs.list()).toHaveLength(0);
+    expect(client.storage.accounts.list()[0]?.dailyRequests).toBe(2);
+    client.close();
+  });
+
   test("routes profile timelines and relationships", async () => {
     const client = createClient();
     expect((await client.getProfileTweets(["demo"], { limit: 1 })).tweets).toHaveLength(1);
@@ -247,3 +290,12 @@ describe("public client", () => {
     external.database.close();
   });
 });
+
+function searchVariables(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body))
+    throw new Error("Expected a GraphQL request body.");
+  const variables = (body as Record<string, unknown>).variables;
+  if (typeof variables !== "object" || variables === null || Array.isArray(variables))
+    throw new Error("Expected GraphQL search variables.");
+  return variables as Record<string, unknown>;
+}

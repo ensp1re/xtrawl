@@ -2,7 +2,7 @@
 
 **Status:** approved for implementation  
 **Owner:** project user  
-**Last reviewed:** 2026-08-11
+**Last reviewed:** 2026-08-12
 
 ## Product hypothesis
 
@@ -27,6 +27,8 @@ persisting progress locally, and exposing predictable typed results.
 5. Run the CLI or library with deterministic typed errors and no mutation of the remote account.
 6. Replace SQLite account persistence with a caller-owned store and explicitly export or restore
    reusable session state without restoring stale leases or login-only credentials.
+7. Request one search page with an optional caller-owned cursor so an application can persist and
+   resume pagination independently of XTrawl checkpoints.
 
 ## First-release scope
 
@@ -43,6 +45,8 @@ persisting progress locally, and exposing predictable typed results.
 - Strict TypeScript interfaces, runtime guards at external boundaries, and test doubles for all network paths.
 - A pluggable sync-or-async account-state contract with atomic lease operations; SQLite remains the
   default adapter while run history, checkpoints, and manifest cache remain local.
+- A low-level `searchPage()` method that supports the full search-filter vocabulary and returns
+  normalized posts plus an opaque `nextCursor`; high-level `search()` remains automatic.
 
 ## Explicit exclusions
 
@@ -82,6 +86,8 @@ persisting progress locally, and exposing predictable typed results.
 - [x] A fresh agent can identify the current work and next action from `.harness/state/` without chat history.
 - [x] A caller-owned asynchronous account store can provision, lease, complete, export, and restore
   account state through the public API, with deterministic contract tests.
+- [x] A caller can pass a search cursor, receive the next cursor, and paginate without creating run
+  records or reading and writing the internal checkpoint store.
 
 ## Open decisions
 
@@ -89,7 +95,10 @@ persisting progress locally, and exposing predictable typed results.
 - Async methods are the canonical library surface. A blocking synchronous wrapper is intentionally excluded because it would compromise Node event-loop safety.
 - Account-state snapshots require an explicit secret acknowledgement, are runtime validated and
   versioned, and exclude active leases plus password, email-password, and two-factor login fields.
+- `searchPage()` exposes normalized posts and only the opaque next cursor. Query metadata and
+  persistence remain caller-owned; `search()` composes the same page primitive for automatic runs.
 
 ## Immediate next action
 
-Keep the bundled manifest current and use the opt-in live suite after GraphQL protocol changes.
+Add the read-only MCP server for agent-harness operation while keeping credentials out of tool
+results and preserving the existing account-pool limits.

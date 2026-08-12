@@ -30,6 +30,7 @@ XTrawl is published on npm as [`xtrawl`](https://www.npmjs.com/package/xtrawl).
 - Posts from public profile timelines
 - Public followers, following, and verified-follower relationships
 - Normalized TypeScript records with optional CSV and JSON output
+- Caller-controlled search pagination with opaque cursors for application-owned state
 
 XTrawl never posts, replies, likes, follows, messages, or changes account settings.
 
@@ -119,6 +120,31 @@ const verified = await client.getVerifiedFollowers(["OpenAI"], { limit: 500 });
 
 Targets may be usernames, `@user` handles, X or Twitter profile URLs, or typed target objects.
 Profile-timeline and relationship methods also accept numeric user IDs and `/i/user/ID` URLs.
+
+## Control search pages yourself
+
+Use `searchPage()` when your application owns cursor storage and pagination. Each call returns one
+page and an opaque `nextCursor`:
+
+```ts
+const filters = {
+  since: "2026-08-01",
+  until: "2026-08-12",
+  fromUsers: ["OpenAI"],
+  displayType: "Latest" as const,
+};
+
+let cursor: string | undefined;
+do {
+  const page = await client.searchPage("typescript", { ...filters, cursor });
+  await saveTweets(page.tweets);
+  cursor = page.nextCursor;
+} while (cursor);
+```
+
+Reuse the same query, filters, and explicit date bounds with every cursor. `searchPage()` supports
+the advanced search filters, but does not split date intervals, save output, or read and write run
+history or checkpoints. Use `search()` when XTrawl should manage those concerns automatically.
 
 ## Use the CLI
 

@@ -3,10 +3,17 @@ import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import { validateConfig } from "../config/validation.js";
 import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
 import type { AccountStateStore } from "../domain/account-state.js";
-import type { FollowRecord, ProfileRecord, SearchResult, TweetRecord } from "../domain/records.js";
+import type {
+  FollowRecord,
+  ProfileRecord,
+  SearchPageResult,
+  SearchResult,
+  TweetRecord,
+} from "../domain/records.js";
 import type {
   FollowsRequest,
   ProfileTimelineRequest,
+  SearchPageRequest,
   SearchRequest,
   TargetInput,
   UserInfoRequest,
@@ -24,7 +31,7 @@ import { SessionBuilder } from "../transport/session.js";
 import { TransactionIdProvider } from "../transport/transaction-id.js";
 import { normalizeTargets } from "../query/targets.js";
 import { collectFollows, collectProfileTweets, type CollectionContext } from "./collectors.js";
-import { collectSearch } from "./search.js";
+import { collectSearch, collectSearchPage } from "./search.js";
 import { collectProfiles } from "./profiles.js";
 import type { ClientInspection, ClientOptions } from "./types.js";
 import { XTrawlDatabase } from "./database.js";
@@ -135,6 +142,10 @@ export class XTrawl {
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
     return collectSearch(this.collectionContext(), query, options);
+  }
+
+  public async searchPage(query = "", options: SearchPageRequest = {}): Promise<SearchPageResult> {
+    return collectSearchPage(this.collectionContext(), query, options);
   }
 
   public async getUserInfo(
