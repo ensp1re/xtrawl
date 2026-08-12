@@ -229,12 +229,14 @@ const client = await XTrawl.create({
 console.log(client.poolSummary);
 ```
 
-XTrawl imports the accounts into SQLite and leases eligible accounts as work is scheduled. The
-default concurrency is five; loading more accounts does not make every account run at once. There is
-no configured account-count limit, but very large pools have not been load-tested. A failed page is
-retried up to three times and may switch accounts twice by default. Rate-limit, network, proxy, and
-transient failures place the affected account into cooldown. A rejected session marks the account
-unusable and attempts a CSRF-cookie repair before another account is selected.
+XTrawl imports accounts into the configured account store and leases eligible accounts as work is
+scheduled. SQLite is the default; applications that provide `accountStore` keep these records in
+their own adapter. The default concurrency is five; loading more accounts does not make every
+account run at once. There is no configured account-count limit, but very large pools have not been
+load-tested. A failed page is retried up to three times and may switch accounts twice by default.
+Rate-limit, network, proxy, and transient failures place the affected account into cooldown. A
+rejected session marks the account unusable and attempts a CSRF-cookie repair before another account
+is selected.
 
 An account-level `proxy` takes precedence over the global `--proxy`. HTTP, HTTPS, and SOCKS5 proxies
 are supported. XTrawl does not currently accept a separate proxy list or automatically assign and
