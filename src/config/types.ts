@@ -6,7 +6,7 @@ export interface ClientConfig {
   readonly proxy?: string | ProxySettings;
   readonly concurrency: number;
   readonly saveDir: string;
-  readonly saveFormat: "csv" | "json" | "both";
+  readonly saveFormat: "csv" | "json" | "both" | "ndjson";
   readonly apiHttpMode: ApiHttpMode;
   readonly apiHttpImpersonate?: string;
   readonly apiUserAgent?: string;

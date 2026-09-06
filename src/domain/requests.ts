@@ -35,7 +35,7 @@ export interface SearchRequest {
   readonly displayType?: "Top" | "Latest";
   readonly resume?: boolean;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: "csv" | "json" | "both" | "ndjson";
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly maxEmptyPages?: number;
@@ -61,7 +61,7 @@ export interface TargetInput {
 
 export interface UserInfoRequest {
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: "csv" | "json" | "both" | "ndjson";
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly signal?: AbortSignal;
@@ -79,7 +79,7 @@ export interface ProfileTimelineRequest {
   readonly allowAnonymous?: boolean;
   readonly maxEmptyPages?: number;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: "csv" | "json" | "both" | "ndjson";
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly signal?: AbortSignal;
@@ -98,7 +98,7 @@ export interface FollowsRequest {
   readonly maxEmptyPages?: number;
   readonly rawJson?: boolean;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: "csv" | "json" | "both" | "ndjson";
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly signal?: AbortSignal;

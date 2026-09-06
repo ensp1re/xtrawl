@@ -2,9 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { TweetRecord } from "../domain/records.js";
 import { writeCsv } from "./csv-writer.js";
-import { writeJson } from "./json-writer.js";
+import { writeJson, writeNdjson } from "./json-writer.js";
 
-export type OutputFormat = "csv" | "json" | "both";
+export type OutputFormat = "csv" | "json" | "both" | "ndjson";
 
 export async function saveRows(
   name: string,
@@ -14,6 +14,8 @@ export async function saveRows(
   await mkdir(options.directory, { recursive: true });
   if (options.format === "json" || options.format === "both")
     await writeJson(join(options.directory, `${name}.json`), rows, options.append);
+  if (options.format === "ndjson")
+    await writeNdjson(join(options.directory, `${name}.ndjson`), rows, options.append);
   if (options.format === "csv" || options.format === "both")
     await writeCsv(join(options.directory, `${name}.csv`), rows.map(toFlatRow), options.append);
 }

@@ -283,7 +283,7 @@ export function collectionOptionsFromCli(
     ...(option.resume === true ? { resume: true } : {}),
     ...(option.save === true ? { save: true } : {}),
     ...(option["save-format"]
-      ? { saveFormat: String(option["save-format"]) as "csv" | "json" | "both" }
+      ? { saveFormat: String(option["save-format"]) as "csv" | "json" | "both" | "ndjson" }
       : {}),
     ...(option["save-dir"] ? { saveDir: String(option["save-dir"]) } : {}),
     ...(option["save-name"] ? { saveName: String(option["save-name"]) } : {}),

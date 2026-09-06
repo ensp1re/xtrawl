@@ -153,6 +153,18 @@ export class XTrawl {
     return this.track(collectSearchPage(this.collectionContext(options.signal), query, options));
   }
 
+  public async *searchPages(
+    query = "",
+    options: SearchPageRequest = {},
+  ): AsyncGenerator<SearchPageResult, void, void> {
+    let cursor = options.cursor;
+    do {
+      const page = await this.searchPage(query, { ...options, ...(cursor === undefined ? {} : { cursor }) });
+      yield page;
+      cursor = page.nextCursor;
+    } while (cursor);
+  }
+
   public async getUserInfo(
     targets: readonly (string | TargetInput)[],
     options: UserInfoRequest = {},
