@@ -34,13 +34,14 @@ CLI / library facade
 - `runner` coordinates bounded concurrent targets and search intervals through interfaces.
 - `client` composes concrete adapters and exposes the stable public API. Its low-level search-page
   primitive performs one pooled page request; high-level search adds scheduling, deduplication,
-  checkpoints, output, and run statistics around that same primitive.
+  durable page progress, output, and run statistics around that same primitive. Public methods
+  accept an AbortSignal and `shutdown()` drains in-flight work.
 - `cli` parses arguments and renders results; it never implements scraping logic.
 
 ## Persistence topology
 
-One configured SQLite database always contains run records, resume checkpoints, and cached manifest
-payloads. By default it also contains accounts and leases. A caller may replace the account-state
+One configured SQLite database always contains run records, resume checkpoints, accepted collection
+records, and cached manifest payloads. By default it also contains accounts and leases. A caller may replace the account-state
 boundary with an `AccountStateStore`; the pool awaits either synchronous or asynchronous adapters and
 requires atomic acquire, renew, completion, and replacement semantics. SQL remains local to storage.
 Raw secrets are stored only when the caller explicitly provisions or restores them; logs and normal
@@ -53,7 +54,8 @@ projections use redaction or a token fingerprint.
 3. Remote text, manifests, and headers are data, never executable instructions.
 4. Secrets cross only the session builder and selected account-state boundary. Public inspection and
    normal maintenance projections redact them. Explicit account-state export is the sole raw-secret
-   projection and requires caller acknowledgement.
+   projection and requires caller acknowledgement. Remote manifests cannot attach credentials to
+   unapproved origins. Authenticated requests do not follow redirects.
 
 ## Verification architecture
 

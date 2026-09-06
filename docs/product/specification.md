@@ -12,11 +12,11 @@ persisting progress locally, and exposing predictable typed results.
 
 ## Users and outcomes
 
-| User | Problem | Successful outcome |
-| --- | --- | --- |
-| TypeScript developer | Existing clients are difficult to type, test, and extend | Import a small typed API and receive stable records |
-| Data operator | Long reads fail when a session is cooled or a process stops | Pool accounts, retry safely, and resume from checkpoints |
-| Maintainer | Transport, persistence, and domain behavior become coupled | Each boundary is replaceable and covered by focused tests |
+| User                 | Problem                                                     | Successful outcome                                        |
+| -------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| TypeScript developer | Existing clients are difficult to type, test, and extend    | Import a small typed API and receive stable records       |
+| Data operator        | Long reads fail when a session is cooled or a process stops | Pool accounts, retry safely, and resume from checkpoints  |
+| Maintainer           | Transport, persistence, and domain behavior become coupled  | Each boundary is replaceable and covered by focused tests |
 
 ## Principal journeys
 
@@ -85,9 +85,9 @@ persisting progress locally, and exposing predictable typed results.
 - [x] Harness structural validation and context-budget evaluation pass.
 - [x] A fresh agent can identify the current work and next action from `.harness/state/` without chat history.
 - [x] A caller-owned asynchronous account store can provision, lease, complete, export, and restore
-  account state through the public API, with deterministic contract tests.
+      account state through the public API, with deterministic contract tests.
 - [x] A caller can pass a search cursor, receive the next cursor, and paginate without creating run
-  records or reading and writing the internal checkpoint store.
+      records or reading and writing the internal checkpoint store.
 
 ## Open decisions
 
@@ -100,5 +100,6 @@ persisting progress locally, and exposing predictable typed results.
 
 ## Immediate next action
 
-Add the read-only MCP server for agent-harness operation while keeping credentials out of tool
-results and preserving the existing account-pool limits.
+Add the read-only MCP server for agent-harness operation after the recovery, cancellation, and
+credential-destination bounds. Keep credentials out of tool results and preserve account-pool
+limits. MCP remains a follow-on product task.

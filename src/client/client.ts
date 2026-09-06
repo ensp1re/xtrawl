@@ -19,8 +19,10 @@ import type {
   UserInfoRequest,
 } from "../domain/requests.js";
 import { ConfigError } from "../domain/errors.js";
+import type { DiagnosticEvent, DiagnosticListener } from "../domain/diagnostics.js";
 import { combineSignals } from "../utils/abort.js";
 import { redactProxy } from "../utils/redact.js";
+import { tokenFingerprint } from "../utils/fingerprint.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
@@ -54,6 +56,7 @@ export class XTrawl {
   private readonly shutdownController = new AbortController();
   private readonly inflight = new Set<Promise<unknown>>();
   private closed = false;
+  private readonly onDiagnostic?: DiagnosticListener;
 
   public constructor(options?: ClientOptions);
   public constructor(options: ClientOptions, initialization: typeof ASYNC_ACCOUNT_STORE_INITIALIZATION);
@@ -64,6 +67,7 @@ export class XTrawl {
     if (options.accountStore && initialization !== ASYNC_ACCOUNT_STORE_INITIALIZATION)
       throw new ConfigError("Custom accountStore instances require await XTrawl.create(options).");
     this.config = validateConfig(options);
+    this.onDiagnostic = options.onDiagnostic;
     this.storage = openStorage(this.config.dbPath, {
       dailyRequestsLimit: this.config.dailyRequestsLimit,
       dailyTweetsLimit: this.config.dailyTweetsLimit,
@@ -147,11 +151,14 @@ export class XTrawl {
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
-    return this.track(collectSearch(this.collectionContext(options.signal), query, options));
+    return this.track(collectSearch(this.collectionContext(options.signal), query, options), "search");
   }
 
   public async searchPage(query = "", options: SearchPageRequest = {}): Promise<SearchPageResult> {
-    return this.track(collectSearchPage(this.collectionContext(options.signal), query, options));
+    return this.track(
+      collectSearchPage(this.collectionContext(options.signal), query, options),
+      "searchPage",
+    );
   }
 
   public async *searchPages(
@@ -171,7 +178,10 @@ export class XTrawl {
     options: UserInfoRequest = {},
   ): Promise<readonly ProfileRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return this.track(collectProfiles(this.collectionContext(options.signal), normalized, options));
+    return this.track(
+      collectProfiles(this.collectionContext(options.signal), normalized, options),
+      "user-info",
+    );
   }
 
   public async getTweet(
@@ -188,6 +198,7 @@ export class XTrawl {
           this.engine.tweetResult(session, tweetId, leaseSignal ?? signal, chargeRequest),
         signal ? { signal } : {},
       ),
+      "tweet",
     );
   }
 
@@ -201,6 +212,7 @@ export class XTrawl {
         normalizeTargets(targets).targets,
         options,
       ),
+      "profile-tweets",
     );
   }
 
@@ -215,6 +227,7 @@ export class XTrawl {
         ...options,
         followType: "followers",
       }),
+      "followers",
     );
   }
 
@@ -229,6 +242,7 @@ export class XTrawl {
         ...options,
         followType: "following",
       }),
+      "following",
     );
   }
 
@@ -243,6 +257,7 @@ export class XTrawl {
         ...options,
         followType: "verified_followers",
       }),
+      "verified-followers",
     );
   }
 
@@ -292,10 +307,33 @@ export class XTrawl {
     return combineSignals(this.shutdownController.signal, signal);
   }
 
-  private track<T>(work: Promise<T>): Promise<T> {
+  private track<T>(work: Promise<T>, operation = "operation"): Promise<T> {
     this.inflight.add(work);
-    return work.finally(() => {
-      this.inflight.delete(work);
+    const started = Date.now();
+    return work
+      .then((value) => {
+        this.emit({ name: "operation", at: started, durationMs: Date.now() - started, operation });
+        return value;
+      })
+      .catch((error: unknown) => {
+        this.emit({
+          name: "operation",
+          at: started,
+          durationMs: Date.now() - started,
+          operation,
+          stopReason: error instanceof Error ? error.name : "error",
+        });
+        throw error;
+      })
+      .finally(() => {
+        this.inflight.delete(work);
+      });
+  }
+
+  private emit(event: DiagnosticEvent): void {
+    this.onDiagnostic?.({
+      ...event,
+      ...(event.account ? { account: tokenFingerprint(event.account) } : {}),
     });
   }
 

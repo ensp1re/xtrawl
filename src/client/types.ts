@@ -3,6 +3,7 @@ import type { AccountInput } from "../domain/accounts.js";
 import type { TransactionIdSource } from "../transport/transaction-id.js";
 import type { SessionFactory } from "../domain/http.js";
 import type { AccountStateStore } from "../domain/account-state.js";
+import type { DiagnosticListener } from "../domain/diagnostics.js";
 
 export interface ClientOptions extends ConfigInput {
   readonly cookiesFile?: string;
@@ -16,6 +17,7 @@ export interface ClientOptions extends ConfigInput {
   readonly sessionFactory?: SessionFactory;
   readonly transactionIdSource?: TransactionIdSource;
   readonly accountStore?: AccountStateStore;
+  readonly onDiagnostic?: DiagnosticListener;
 }
 
 export interface ClientInspection {
