@@ -26,14 +26,16 @@ export class ExecutionRunner<T> {
         if (!task) return;
         try {
           await worker(task.payload);
-          queue.ack(task.id);
-          complete.push(task.payload);
+          if (queue.ack(task.id, task.generation)) complete.push(task.payload);
         } catch (error) {
-          if (task.attempts < (this.options.maxAttempts ?? 3))
-            queue.retry(task.id, error instanceof Error ? error.message : String(error));
-          else {
-            queue.fail(task.id, error instanceof Error ? error.message : String(error));
-            failures.push({ task: queue.snapshot().find((item) => item.id === task.id) ?? task, error });
+          const message = error instanceof Error ? error.message : String(error);
+          if (task.attempts < (this.options.maxAttempts ?? 3)) {
+            queue.retry(task.id, message, task.generation);
+          } else if (queue.fail(task.id, message, task.generation)) {
+            failures.push({
+              task: queue.snapshot().find((item) => item.id === task.id) ?? task,
+              error,
+            });
           }
         }
       }
