@@ -60,8 +60,15 @@ export async function collectProfileTweets(
       pages += 1;
       const page = await context.pool.execute(
         "profile-tweets",
-        ({ session }) =>
-          context.engine.profilePage(session, resolved.userId, request, cursor, context.signal),
+        ({ session, signal, chargeRequest }) =>
+          context.engine.profilePage(
+            session,
+            resolved.userId,
+            request,
+            cursor,
+            signal ?? context.signal,
+            chargeRequest,
+          ),
         {
           countTweets: (value) => value.tweets.length,
           onRetry: () => {
@@ -157,8 +164,15 @@ export async function collectFollows(
       pages += 1;
       const page = await context.pool.execute(
         options.followType,
-        ({ session }) =>
-          context.engine.followsPage(session, resolved.userId, options.followType, cursor, context.signal),
+        ({ session, signal, chargeRequest }) =>
+          context.engine.followsPage(
+            session,
+            resolved.userId,
+            options.followType,
+            cursor,
+            signal ?? context.signal,
+            chargeRequest,
+          ),
         {
           maxAccountSwitches: options.maxAccountSwitches,
           ...(context.signal ? { signal: context.signal } : {}),
@@ -234,7 +248,8 @@ async function resolveTarget(
   if (target.userId && !target.username) return { username: target.userId, userId: target.userId, raw: {} };
   return context.pool.execute(
     "user-lookup",
-    ({ session }) => context.engine.resolveTarget(session, target, context.signal),
+    ({ session, signal, chargeRequest }) =>
+      context.engine.resolveTarget(session, target, signal ?? context.signal, chargeRequest),
     {
       onRetry,
       maxAccountSwitches,

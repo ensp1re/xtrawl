@@ -27,7 +27,8 @@ export async function collectProfiles(
     if (!username) return;
     const user = await context.pool.execute(
       "user-info",
-      ({ session }) => context.engine.lookupUser(session, username, context.signal),
+      ({ session, signal, chargeRequest }) =>
+        context.engine.lookupUser(session, username, signal ?? context.signal, chargeRequest),
       context.signal ? { signal: context.signal } : {},
     );
     records.set(index, mapProfile(user, target, username));

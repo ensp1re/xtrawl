@@ -21,9 +21,9 @@ export function parseRateLimitRemaining(headers: Readonly<Record<string, string>
   return Number.isFinite(value) ? value : undefined;
 }
 
-export function effectiveStatus(status: number, headers: Readonly<Record<string, string>>): number {
+export function isQuotaExhausted(headers: Readonly<Record<string, string>>): boolean {
   const remaining = parseRateLimitRemaining(headers);
-  return status === 200 && remaining !== undefined && remaining <= 0 ? 429 : status;
+  return remaining !== undefined && remaining <= 0;
 }
 
 export function computeCooldown(

@@ -1,6 +1,6 @@
 import {
   computeCooldown,
-  effectiveStatus,
+  isQuotaExhausted,
   parseRateLimitRemaining,
   parseRateLimitReset,
 } from "../../src/pool/cooldown.js";
@@ -15,10 +15,10 @@ describe("cooldown decisions", () => {
     expect(parseRateLimitRemaining({ "X-Rate-Limit-Remaining": "bad" })).toBeUndefined();
   });
 
-  test("turns an exhausted successful response into a rate-limit status", () => {
-    expect(effectiveStatus(200, { "x-rate-limit-remaining": "0" })).toBe(429);
-    expect(effectiveStatus(200, { "x-rate-limit-remaining": "1" })).toBe(200);
-    expect(effectiveStatus(500, {})).toBe(500);
+  test("detects exhausted quota without rewriting a successful status", () => {
+    expect(isQuotaExhausted({ "x-rate-limit-remaining": "0" })).toBe(true);
+    expect(isQuotaExhausted({ "x-rate-limit-remaining": "1" })).toBe(false);
+    expect(isQuotaExhausted({})).toBe(false);
   });
 
   test("classifies authentication, reset, transient, and healthy outcomes", () => {

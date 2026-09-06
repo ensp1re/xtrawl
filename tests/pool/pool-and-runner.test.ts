@@ -1,6 +1,6 @@
 import { accountInputToRecord } from "../../src/auth/records.js";
 import { validateConfig } from "../../src/config/validation.js";
-import { AuthError, RateLimitError } from "../../src/domain/errors.js";
+import { AccountStateError, AuthError, RateLimitError } from "../../src/domain/errors.js";
 import { AccountPool } from "../../src/pool/account-pool.js";
 import { TokenBucketLimiter } from "../../src/pool/limiter.js";
 import { ExecutionRunner, TaskQueue } from "../../src/runner/index.js";
@@ -126,6 +126,75 @@ describe("account pool and limits", () => {
     ).resolves.toBe(true);
     expect(repairs).toBe(1);
     expect(attempts).toBe(2);
+    storage.database.close();
+  });
+
+  test("keeps a successful quota-exhausted page and cools the account", async () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(readyAccount());
+    const pool = new AccountPool(
+      storage.accounts,
+      new SessionBuilder({
+        bearerToken: "bearer",
+        factory: (options) => sessionFactory(() => response({}))(options),
+      }),
+      validateConfig({ cooldownJitterMs: 0, minDelayMs: 0, cooldownDefaultMs: 5_000 }),
+    );
+    const resetAt = Date.now() + 10_000;
+    await expect(
+      pool.execute("quota", async ({ chargeRequest }) => {
+        chargeRequest();
+        return {
+          tweets: [{ tweetId: "1" }],
+          quota: { remaining: 0, resetAt, exhausted: true },
+        };
+      }),
+    ).resolves.toMatchObject({ tweets: [{ tweetId: "1" }] });
+    const account = storage.accounts.findByUsername("one");
+    expect(account?.status).toBe(2);
+    expect(account?.availableUntil).toBe(resetAt);
+    expect(account?.dailyRequests).toBe(1);
+    storage.database.close();
+  });
+
+  test("charges each GraphQL attempt including hidden retries", async () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(readyAccount());
+    const pool = new AccountPool(
+      storage.accounts,
+      new SessionBuilder({
+        bearerToken: "bearer",
+        factory: (options) => sessionFactory(() => response({}))(options),
+      }),
+      validateConfig({ cooldownJitterMs: 0, minDelayMs: 0 }),
+    );
+    await pool.execute("attempts", async ({ chargeRequest }) => {
+      chargeRequest();
+      chargeRequest();
+      return { tweets: [{ tweetId: "1" }] };
+    });
+    expect(storage.accounts.findByUsername("one")?.dailyRequests).toBe(2);
+    storage.database.close();
+  });
+
+  test("treats a failed lease heartbeat as lost ownership", async () => {
+    const storage = openStorage(":memory:");
+    storage.accounts.upsert(readyAccount());
+    storage.accounts.renewLease = () => false;
+    const pool = new AccountPool(
+      storage.accounts,
+      new SessionBuilder({
+        bearerToken: "bearer",
+        factory: (options) => sessionFactory(() => response({}))(options),
+      }),
+      validateConfig({ cooldownJitterMs: 0, minDelayMs: 0, leaseHeartbeatMs: 10, leaseTtlMs: 50 }),
+    );
+    await expect(
+      pool.execute("lost", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return { tweets: [{ tweetId: "1" }] };
+      }),
+    ).rejects.toBeInstanceOf(AccountStateError);
     storage.database.close();
   });
 

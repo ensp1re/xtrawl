@@ -148,7 +148,8 @@ async function requestSearchPage(
 ): Promise<SearchPageResult> {
   const page = await context.pool.execute(
     "search",
-    ({ session }) => context.engine.search(session, request, options.cursor, context.signal),
+    ({ session, signal, chargeRequest }) =>
+      context.engine.search(session, request, options.cursor, signal ?? context.signal, chargeRequest),
     {
       countTweets: (value) => value.tweets.length,
       ...(options.onRetry ? { onRetry: options.onRetry } : {}),

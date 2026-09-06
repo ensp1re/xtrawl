@@ -104,10 +104,16 @@ describe("API engine and transport", () => {
       return request.url.includes("refreshed-search") ? response(tweetPayload()) : response("missing", 404);
     })({ cookies: { auth_token: "a", ct0: "b" } });
     const engine = new ApiEngine(config, provider, new GraphqlTransport(new TransactionIdProvider()));
-    await expect(engine.search(session, { searchQuery: "hello", limit: 1 })).resolves.toMatchObject({
+    let attempts = 0;
+    await expect(
+      engine.search(session, { searchQuery: "hello", limit: 1 }, undefined, undefined, () => {
+        attempts += 1;
+      }),
+    ).resolves.toMatchObject({
       tweets: [{ tweetId: "1" }],
     });
     expect(requests).toHaveLength(2);
+    expect(attempts).toBe(2);
     storage.database.close();
   });
 

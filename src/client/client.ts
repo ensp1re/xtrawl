@@ -171,7 +171,8 @@ export class XTrawl {
     return this.track(
       this.pool.execute(
         "tweet",
-        ({ session }) => this.engine.tweetResult(session, tweetId, signal),
+        ({ session, signal: leaseSignal, chargeRequest }) =>
+          this.engine.tweetResult(session, tweetId, leaseSignal ?? signal, chargeRequest),
         signal ? { signal } : {},
       ),
     );

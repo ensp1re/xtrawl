@@ -115,13 +115,22 @@ describe("GraphQL transport", () => {
     await expect(transport.get(server, "https://x.test", {}, 1000)).rejects.toThrow(NetworkError);
   });
 
-  test("honors exhausted rate-limit headers on successful HTTP responses", async () => {
+  test("returns a successful quota-exhausted page instead of converting it to 429", async () => {
     const transport = new GraphqlTransport(new TransactionIdProvider());
     const session = sessionFactory(() =>
-      response({ data: {} }, 200, { "x-rate-limit-remaining": "0", "x-rate-limit-reset": "2000000000" }),
+      response({ data: { ok: true } }, 200, {
+        "x-rate-limit-remaining": "0",
+        "x-rate-limit-reset": "2000000000",
+      }),
     )({ cookies: {} });
-    await expect(transport.get(session, "https://x.test", {}, 1000)).rejects.toMatchObject({
-      diagnostics: { statusCode: 429, resetAt: 2_000_000_000_000 },
+    await expect(
+      transport.get(session, "https://x.com/i/api/graphql/id/SearchTimeline", {}, 1000),
+    ).resolves.toMatchObject({
+      status: 200,
+      data: { data: { ok: true } },
+      remaining: 0,
+      resetAt: 2_000_000_000_000,
+      quotaExhausted: true,
     });
   });
 

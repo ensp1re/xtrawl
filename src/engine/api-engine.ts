@@ -3,7 +3,7 @@ import type { GraphqlResponse, HttpSession } from "../domain/http.js";
 import type { Manifest } from "../domain/manifest.js";
 import type { FollowType, ProfileTimelineRequest, SearchRequest, TargetInput } from "../domain/requests.js";
 import type { TweetRecord } from "../domain/records.js";
-import type { FollowPage, TweetPage } from "./extractors.js";
+import type { FollowPage, RequestQuota, TweetPage } from "./extractors.js";
 import {
   extractFollows,
   extractProfileTweets,
@@ -36,30 +36,34 @@ export class ApiEngine {
     request: SearchRequest,
     cursor?: string,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<TweetPage> {
     const response = await this.graphql(
       session,
       OPERATION.search,
       (manifest) => buildSearchParams(request, manifest, cursor, this.config.apiPageSize),
       signal,
+      onAttempt,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Search request returned status ${response.status}.`, {
         statusCode: response.status,
       });
-    return extractSearchTweets(response.data);
+    return attachQuota(extractSearchTweets(response.data), response);
   }
 
   public async lookupUser(
     session: HttpSession,
     username: string,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<Record<string, unknown>> {
     const response = await this.graphql(
       session,
       OPERATION.userLookup,
       (manifest) => buildUserLookupParams(username, manifest),
       signal,
+      onAttempt,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`User lookup returned status ${response.status}.`, {
@@ -76,18 +80,20 @@ export class ApiEngine {
     request: ProfileTimelineRequest,
     cursor?: string,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<TweetPage> {
     const response = await this.graphql(
       session,
       OPERATION.profileTimeline,
       (manifest) => buildProfileTimelineParams(userId, request, manifest, cursor, this.config.apiPageSize),
       signal,
+      onAttempt,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Profile timeline returned status ${response.status}.`, {
         statusCode: response.status,
       });
-    return extractProfileTweets(response.data);
+    return attachQuota(extractProfileTweets(response.data), response);
   }
 
   public async followsPage(
@@ -96,6 +102,7 @@ export class ApiEngine {
     type: FollowType,
     cursor?: string,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<FollowPage> {
     const operation =
       type === "followers"
@@ -108,24 +115,27 @@ export class ApiEngine {
       operation,
       (manifest) => buildFollowsParams(userId, operation, manifest, cursor, this.config.apiPageSize),
       signal,
+      onAttempt,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Relationship request returned status ${response.status}.`, {
         statusCode: response.status,
       });
-    return extractFollows(response.data);
+    return attachQuota(extractFollows(response.data), response);
   }
 
   public async tweetResult(
     session: HttpSession,
     tweetId: string,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<TweetRecord | undefined> {
     const response = await this.graphql(
       session,
       OPERATION.tweetResult,
       (manifest) => buildTweetResultParams(tweetId, manifest),
       signal,
+      onAttempt,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Tweet lookup returned status ${response.status}.`, {
@@ -139,15 +149,18 @@ export class ApiEngine {
     operation: string,
     buildParams: (manifest: Manifest) => Record<string, string>,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<GraphqlResponse> {
-    const send = (manifest: Manifest): Promise<GraphqlResponse> =>
-      this.transport.get(
+    const send = (manifest: Manifest): Promise<GraphqlResponse> => {
+      onAttempt?.();
+      return this.transport.get(
         session,
         endpointFor(manifest, operation, this.config.allowedManifestOrigins),
         buildParams(manifest),
         manifest.timeoutSeconds * 1_000,
         signal,
       );
+    };
     const manifest = await this.manifests.getManifest();
     try {
       return await send(manifest);
@@ -167,13 +180,14 @@ export class ApiEngine {
     session: HttpSession,
     target: TargetInput,
     signal?: AbortSignal,
+    onAttempt?: () => void,
   ): Promise<{ readonly username: string; readonly userId: string; readonly raw: Record<string, unknown> }> {
     const username =
       target.username?.replace(/^@/u, "") ?? target.profileUrl?.split("/").filter(Boolean).pop();
     if (target.userId && !username) return { username: target.userId, userId: target.userId, raw: {} };
     if (!username)
       throw new NetworkError("Target has no resolvable username or user ID.", { statusCode: 400 });
-    const raw = target.userId ? {} : await this.lookupUser(session, username, signal);
+    const raw = target.userId ? {} : await this.lookupUser(session, username, signal, onAttempt);
     const userId = target.userId ?? String(raw.rest_id ?? raw.id ?? "");
     if (!userId) throw new NetworkError(`Target ${username} has no user id.`, { statusCode: 404 });
     return { username, userId, raw };
@@ -183,4 +197,17 @@ export class ApiEngine {
 function isOperationMismatch(error: unknown): boolean {
   if (!(error instanceof NetworkError)) return false;
   return error.diagnostics.statusCode === 404 || error.diagnostics.statusCode === 422;
+}
+
+function attachQuota<T extends { readonly quota?: RequestQuota }>(value: T, response: GraphqlResponse): T {
+  if (response.remaining === undefined && response.resetAt === undefined && !response.quotaExhausted)
+    return value;
+  return {
+    ...value,
+    quota: {
+      ...(response.remaining === undefined ? {} : { remaining: response.remaining }),
+      ...(response.resetAt === undefined ? {} : { resetAt: response.resetAt }),
+      ...(response.quotaExhausted ? { exhausted: true } : {}),
+    },
+  };
 }

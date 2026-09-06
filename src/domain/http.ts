@@ -40,4 +40,7 @@ export interface GraphqlResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly snippet: string;
+  readonly remaining?: number;
+  readonly resetAt?: number;
+  readonly quotaExhausted?: boolean;
 }
