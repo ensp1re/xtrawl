@@ -25,8 +25,10 @@ export async function collectProfiles(
   const outcome = await runner.run(tasks, async ({ index, target }) => {
     const username = targetUsername(target);
     if (!username) return;
-    const user = await context.pool.execute("user-info", ({ session }) =>
-      context.engine.lookupUser(session, username),
+    const user = await context.pool.execute(
+      "user-info",
+      ({ session }) => context.engine.lookupUser(session, username, context.signal),
+      context.signal ? { signal: context.signal } : {},
     );
     records.set(index, mapProfile(user, target, username));
   });

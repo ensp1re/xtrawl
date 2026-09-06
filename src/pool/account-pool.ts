@@ -16,6 +16,7 @@ import type { HttpSession } from "../domain/http.js";
 import { computeCooldown } from "./cooldown.js";
 import type { SessionBuilder } from "../transport/session.js";
 import { isRecord } from "../utils/guards.js";
+import { isAbortError, throwIfAborted } from "../utils/abort.js";
 import { TokenBucketLimiter, sleep } from "./limiter.js";
 
 export interface PoolExecutionContext {
@@ -27,6 +28,7 @@ export interface PoolExecutionOptions<T> {
   readonly countTweets?: (value: T) => number;
   readonly onRetry?: (error: unknown, attempt: number) => void;
   readonly maxAccountSwitches?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type AccountRepair = (account: AccountLease) => Promise<boolean>;
@@ -57,6 +59,7 @@ export class AccountPool {
     let lastError: unknown;
     let repairs = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      throwIfAborted(options.signal);
       const now = Date.now();
       const account = await this.repository.acquireLease({
         now,
@@ -95,7 +98,7 @@ export class AccountPool {
             timeoutMs: this.config.proxyCheckTimeoutMs,
           });
         session = this.sessions.forAccount(account);
-        await this.limiterFor(account).acquire();
+        await this.limiterFor(account).acquire(options.signal);
         operationStarted = true;
         const value = await operation({ account, session });
         await this.completeLease(account, {
@@ -120,7 +123,10 @@ export class AccountPool {
         }
         if (attempt >= maxAttempts || !isRetryable(error)) throw error;
         options.onRetry?.(error, attempt);
-        await sleep(Math.min(this.config.retryMaxMs, this.config.retryBaseMs * 2 ** (attempt - 1)));
+        await sleep(
+          Math.min(this.config.retryMaxMs, this.config.retryBaseMs * 2 ** (attempt - 1)),
+          options.signal,
+        );
       } finally {
         if (heartbeat) clearInterval(heartbeat);
         await session?.close();
@@ -267,6 +273,8 @@ function countTweets(value: unknown): number {
 }
 
 function isRetryable(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  if (error instanceof NetworkError && error.diagnostics.statusCode === 499) return false;
   if (error instanceof AuthError || error instanceof RateLimitError || error instanceof NetworkError)
     return true;
   if (error instanceof ProxyError || error instanceof AccountSessionBuildError) return true;

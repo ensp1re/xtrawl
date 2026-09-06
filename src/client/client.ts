@@ -19,6 +19,7 @@ import type {
   UserInfoRequest,
 } from "../domain/requests.js";
 import { ConfigError } from "../domain/errors.js";
+import { combineSignals } from "../utils/abort.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
@@ -48,6 +49,9 @@ export class XTrawl {
   private readonly usesExternalAccountStore: boolean;
   private pool!: AccountPool;
   private engine!: ApiEngine;
+  private readonly shutdownController = new AbortController();
+  private readonly inflight = new Set<Promise<unknown>>();
+  private closed = false;
 
   public constructor(options?: ClientOptions);
   public constructor(options: ClientOptions, initialization: typeof ASYNC_ACCOUNT_STORE_INITIALIZATION);
@@ -141,11 +145,11 @@ export class XTrawl {
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
-    return collectSearch(this.collectionContext(), query, options);
+    return this.track(collectSearch(this.collectionContext(options.signal), query, options));
   }
 
   public async searchPage(query = "", options: SearchPageRequest = {}): Promise<SearchPageResult> {
-    return collectSearchPage(this.collectionContext(), query, options);
+    return this.track(collectSearchPage(this.collectionContext(options.signal), query, options));
   }
 
   public async getUserInfo(
@@ -153,20 +157,36 @@ export class XTrawl {
     options: UserInfoRequest = {},
   ): Promise<readonly ProfileRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectProfiles(this.collectionContext(), normalized, options);
+    return this.track(collectProfiles(this.collectionContext(options.signal), normalized, options));
   }
 
-  public async getTweet(target: string): Promise<TweetRecord | undefined> {
+  public async getTweet(
+    target: string,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<TweetRecord | undefined> {
     const tweetId = tweetIdFromTarget(target);
     if (!tweetId) throw new ConfigError("Tweet lookup requires a numeric tweet ID or status URL.");
-    return this.pool.execute("tweet", ({ session }) => this.engine.tweetResult(session, tweetId));
+    const signal = this.operationSignal(options.signal);
+    return this.track(
+      this.pool.execute(
+        "tweet",
+        ({ session }) => this.engine.tweetResult(session, tweetId, signal),
+        signal ? { signal } : {},
+      ),
+    );
   }
 
   public async getProfileTweets(
     targets: readonly (string | TargetInput)[],
     options: Omit<ProfileTimelineRequest, "targets"> = {},
   ): Promise<SearchResult> {
-    return collectProfileTweets(this.collectionContext(), normalizeTargets(targets).targets, options);
+    return this.track(
+      collectProfileTweets(
+        this.collectionContext(options.signal),
+        normalizeTargets(targets).targets,
+        options,
+      ),
+    );
   }
 
   public async getFollowers(
@@ -174,11 +194,13 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "followers",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: "followers",
+      }),
+    );
   }
 
   public async getFollowing(
@@ -186,11 +208,13 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "following",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: "following",
+      }),
+    );
   }
 
   public async getVerifiedFollowers(
@@ -198,11 +222,13 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "verified_followers",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: "verified_followers",
+      }),
+    );
   }
 
   public inspect(): ClientInspection {
@@ -220,12 +246,40 @@ export class XTrawl {
     return this.pool.summary;
   }
 
+  public async shutdown(): Promise<void> {
+    this.shutdownController.abort();
+    await Promise.allSettled([...this.inflight]);
+    this.close();
+  }
+
   public close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    if (!this.shutdownController.signal.aborted) this.shutdownController.abort();
     this.storage.database.close();
   }
 
-  private collectionContext(): CollectionContext {
-    return { config: this.config, pool: this.pool, engine: this.engine, storage: this.storage };
+  private collectionContext(signal?: AbortSignal): CollectionContext {
+    if (this.closed) throw new ConfigError("XTrawl has been shut down.");
+    const combined = this.operationSignal(signal);
+    return {
+      config: this.config,
+      pool: this.pool,
+      engine: this.engine,
+      storage: this.storage,
+      ...(combined ? { signal: combined } : {}),
+    };
+  }
+
+  private operationSignal(signal?: AbortSignal): AbortSignal | undefined {
+    return combineSignals(this.shutdownController.signal, signal);
+  }
+
+  private track<T>(work: Promise<T>): Promise<T> {
+    this.inflight.add(work);
+    return work.finally(() => {
+      this.inflight.delete(work);
+    });
   }
 
   private provisionSqlite(options: ClientOptions): void {

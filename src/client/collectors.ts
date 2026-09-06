@@ -16,6 +16,7 @@ export interface CollectionContext {
   readonly pool: AccountPool;
   readonly engine: ApiEngine;
   readonly storage: StorageBundle;
+  readonly signal?: AbortSignal;
 }
 
 export async function collectProfileTweets(
@@ -59,13 +60,15 @@ export async function collectProfileTweets(
       pages += 1;
       const page = await context.pool.execute(
         "profile-tweets",
-        ({ session }) => context.engine.profilePage(session, resolved.userId, request, cursor),
+        ({ session }) =>
+          context.engine.profilePage(session, resolved.userId, request, cursor, context.signal),
         {
           countTweets: (value) => value.tweets.length,
           onRetry: () => {
             poolRetries += 1;
           },
           maxAccountSwitches: options.maxAccountSwitches,
+          ...(context.signal ? { signal: context.signal } : {}),
         },
       );
       const globalRemaining =
@@ -154,8 +157,12 @@ export async function collectFollows(
       pages += 1;
       const page = await context.pool.execute(
         options.followType,
-        ({ session }) => context.engine.followsPage(session, resolved.userId, options.followType, cursor),
-        { maxAccountSwitches: options.maxAccountSwitches },
+        ({ session }) =>
+          context.engine.followsPage(session, resolved.userId, options.followType, cursor, context.signal),
+        {
+          maxAccountSwitches: options.maxAccountSwitches,
+          ...(context.signal ? { signal: context.signal } : {}),
+        },
       );
       let added = 0;
       for (const user of page.users) {
@@ -225,10 +232,15 @@ async function resolveTarget(
   maxAccountSwitches?: number,
 ): Promise<{ readonly username: string; readonly userId: string; readonly raw: Record<string, unknown> }> {
   if (target.userId && !target.username) return { username: target.userId, userId: target.userId, raw: {} };
-  return context.pool.execute("user-lookup", ({ session }) => context.engine.resolveTarget(session, target), {
-    onRetry,
-    maxAccountSwitches,
-  });
+  return context.pool.execute(
+    "user-lookup",
+    ({ session }) => context.engine.resolveTarget(session, target, context.signal),
+    {
+      onRetry,
+      maxAccountSwitches,
+      ...(context.signal ? { signal: context.signal } : {}),
+    },
+  );
 }
 
 function workerCount(context: CollectionContext, tasks: number): number {

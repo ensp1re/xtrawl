@@ -19,6 +19,8 @@ export interface HttpRequestOptions {
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+  readonly maxBytes?: number;
   readonly redirect?: "follow" | "error" | "manual";
 }
 

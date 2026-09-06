@@ -4,6 +4,8 @@ import type { HttpRequestOptions, HttpResponse, HttpSession, SessionFactory } fr
 import { AccountSessionRuntimeError } from "../domain/errors.js";
 import { ProxyError } from "../domain/errors.js";
 import { prepareAuthMaterial } from "../auth/material.js";
+import { combineSignals, isAbortError } from "../utils/abort.js";
+import { cancelBody, DEFAULT_MAX_RESPONSE_BYTES, readResponseText } from "./body.js";
 import { proxyDispatcher, proxyToUrl } from "./proxy.js";
 
 const DEFAULT_USER_AGENT =
@@ -66,10 +68,13 @@ export class SessionBuilder {
         signal: controller.signal,
         dispatcher,
       });
-      if (response.status === 407)
-        throw new ProxyError("Proxy authentication was rejected.", { statusCode: 407 });
-      this.healthyProxies.set(proxyUrl, Date.now());
-      await response.body?.cancel();
+      try {
+        if (response.status === 407)
+          throw new ProxyError("Proxy authentication was rejected.", { statusCode: 407 });
+        this.healthyProxies.set(proxyUrl, Date.now());
+      } finally {
+        await cancelBody(response);
+      }
     } catch (error) {
       if (error instanceof ProxyError) throw error;
       throw new ProxyError(error instanceof Error ? error.message : String(error), { statusCode: 599 });
@@ -109,8 +114,9 @@ class FetchSession implements HttpSession {
   ): Promise<HttpResponse> {
     const target = new URL(url);
     for (const [key, value] of Object.entries(options.query ?? {})) target.searchParams.set(key, value);
-    const controller = new AbortController();
-    const timeout = options.timeoutMs ? setTimeout(() => controller.abort(), options.timeoutMs) : undefined;
+    const timeout = new AbortController();
+    const timer = options.timeoutMs ? setTimeout(() => timeout.abort(), options.timeoutMs) : undefined;
+    const signal = combineSignals(options.signal, options.timeoutMs ? timeout.signal : undefined);
     try {
       const headers: Record<string, string> = {
         Authorization: `Bearer ${this.material.bearerToken}`,
@@ -129,24 +135,34 @@ class FetchSession implements HttpSession {
         headers,
         ...(method === "POST" && options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         redirect: options.redirect ?? "follow",
-        signal: controller.signal,
+        ...(signal ? { signal } : {}),
         ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
       } as Parameters<typeof this.fetcher>[1];
       const response = await this.fetcher(target, init);
       const headersMap = Object.fromEntries(response.headers.entries());
-      return {
-        status: response.status,
-        headers: headersMap,
-        text: () => response.text(),
-        json: () => response.json() as Promise<unknown>,
-      };
+      try {
+        const text = await readResponseText(response, {
+          ...(signal ? { signal } : {}),
+          maxBytes: options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+        });
+        return {
+          status: response.status,
+          headers: headersMap,
+          text: async () => text,
+          json: async () => (text ? (JSON.parse(text) as unknown) : null),
+        };
+      } catch (error) {
+        await cancelBody(response);
+        throw error;
+      }
     } catch (error) {
+      if (isAbortError(error)) throw error;
       throw new AccountSessionRuntimeError(
         method === "GET" ? "http_get_failed" : "http_post_failed",
         error instanceof Error ? error.message : String(error),
       );
     } finally {
-      if (timeout) clearTimeout(timeout);
+      if (timer) clearTimeout(timer);
     }
   }
 

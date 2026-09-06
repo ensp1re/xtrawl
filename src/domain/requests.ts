@@ -39,6 +39,7 @@ export interface SearchRequest {
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly maxEmptyPages?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type SearchPageRequest = Omit<
@@ -47,6 +48,7 @@ export type SearchPageRequest = Omit<
 > & {
   readonly cursor?: string;
   readonly maxAccountSwitches?: number;
+  readonly signal?: AbortSignal;
 };
 
 export interface TargetInput {
@@ -62,6 +64,7 @@ export interface UserInfoRequest {
   readonly saveFormat?: "csv" | "json" | "both";
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface ProfileTimelineRequest {
@@ -79,6 +82,7 @@ export interface ProfileTimelineRequest {
   readonly saveFormat?: "csv" | "json" | "both";
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface FollowsRequest {
@@ -97,4 +101,5 @@ export interface FollowsRequest {
   readonly saveFormat?: "csv" | "json" | "both";
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }

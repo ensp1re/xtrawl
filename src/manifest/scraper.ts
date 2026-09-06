@@ -1,4 +1,10 @@
 import type { ManifestPayload } from "../domain/manifest.js";
+import {
+  AUXILIARY_REQUEST_TIMEOUT_MS,
+  cancelBody,
+  DEFAULT_MAX_RESPONSE_BYTES,
+  readResponseText,
+} from "../transport/body.js";
 import { asString } from "../utils/guards.js";
 
 const OPERATION_NAMES: Record<string, string> = {
@@ -82,9 +88,10 @@ export async function scrapeManifestFromWeb(
     ...scriptHeaders,
     ...(options.authToken ? { Cookie: `auth_token=${options.authToken}` } : {}),
   };
-  const response = await fetcher("https://x.com/home", { headers: pageHeaders, redirect: "follow" });
-  if (!response.ok) throw new Error(`Manifest page failed with status ${response.status}`);
-  const html = await response.text();
+  const html = await fetchBoundedText(fetcher, "https://x.com/home", {
+    headers: pageHeaders,
+    redirect: "follow",
+  });
   const seen = new Set<string>();
   const scripts: string[] = [];
   for (const match of html.matchAll(/<script[^>]+src=["']([^"']+)["']/giu)) {
@@ -100,9 +107,12 @@ export async function scrapeManifestFromWeb(
   const discovered: Record<string, string> = {};
   const discoveredFeatures: Record<string, Record<string, boolean>> = {};
   for (const url of selected) {
-    const bundle = await fetcher(url, { headers: scriptHeaders, redirect: "follow" });
-    if (!bundle.ok) continue;
-    const source = await bundle.text();
+    let source: string;
+    try {
+      source = await fetchBoundedText(fetcher, url, { headers: scriptHeaders, redirect: "follow" });
+    } catch {
+      continue;
+    }
     Object.assign(discovered, extractOperationQueryIdsFromJavascript(source));
     Object.assign(discoveredFeatures, extractOperationFeaturesFromJavascript(source));
     if (Object.keys(discovered).length === Object.keys(OPERATION_NAMES).length) break;
@@ -116,6 +126,24 @@ export async function scrapeManifestFromWeb(
     queryIds: { ...base.queryIds, ...discovered },
     operationFeatures: mergeOperationFeatures(base.operationFeatures, discoveredFeatures),
   };
+}
+
+async function fetchBoundedText(fetcher: typeof fetch, url: string, init: RequestInit): Promise<string> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), AUXILIARY_REQUEST_TIMEOUT_MS);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeout.signal]) : timeout.signal;
+  try {
+    const response = await fetcher(url, { ...init, signal, redirect: init.redirect ?? "follow" });
+    try {
+      if (!response.ok) throw new Error(`Manifest fetch failed with status ${response.status}`);
+      return await readResponseText(response, { signal, maxBytes: DEFAULT_MAX_RESPONSE_BYTES });
+    } catch (error) {
+      await cancelBody(response);
+      throw error;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function mergeOperationFeatures(

@@ -31,9 +31,17 @@ export class ApiEngine {
     private readonly transport: GraphqlTransport,
   ) {}
 
-  public async search(session: HttpSession, request: SearchRequest, cursor?: string): Promise<TweetPage> {
-    const response = await this.graphql(session, OPERATION.search, (manifest) =>
-      buildSearchParams(request, manifest, cursor, this.config.apiPageSize),
+  public async search(
+    session: HttpSession,
+    request: SearchRequest,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<TweetPage> {
+    const response = await this.graphql(
+      session,
+      OPERATION.search,
+      (manifest) => buildSearchParams(request, manifest, cursor, this.config.apiPageSize),
+      signal,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Search request returned status ${response.status}.`, {
@@ -42,9 +50,16 @@ export class ApiEngine {
     return extractSearchTweets(response.data);
   }
 
-  public async lookupUser(session: HttpSession, username: string): Promise<Record<string, unknown>> {
-    const response = await this.graphql(session, OPERATION.userLookup, (manifest) =>
-      buildUserLookupParams(username, manifest),
+  public async lookupUser(
+    session: HttpSession,
+    username: string,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.graphql(
+      session,
+      OPERATION.userLookup,
+      (manifest) => buildUserLookupParams(username, manifest),
+      signal,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`User lookup returned status ${response.status}.`, {
@@ -60,9 +75,13 @@ export class ApiEngine {
     userId: string,
     request: ProfileTimelineRequest,
     cursor?: string,
+    signal?: AbortSignal,
   ): Promise<TweetPage> {
-    const response = await this.graphql(session, OPERATION.profileTimeline, (manifest) =>
-      buildProfileTimelineParams(userId, request, manifest, cursor, this.config.apiPageSize),
+    const response = await this.graphql(
+      session,
+      OPERATION.profileTimeline,
+      (manifest) => buildProfileTimelineParams(userId, request, manifest, cursor, this.config.apiPageSize),
+      signal,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Profile timeline returned status ${response.status}.`, {
@@ -76,6 +95,7 @@ export class ApiEngine {
     userId: string,
     type: FollowType,
     cursor?: string,
+    signal?: AbortSignal,
   ): Promise<FollowPage> {
     const operation =
       type === "followers"
@@ -83,8 +103,11 @@ export class ApiEngine {
         : type === "verified_followers"
           ? OPERATION.verifiedFollowers
           : OPERATION.following;
-    const response = await this.graphql(session, operation, (manifest) =>
-      buildFollowsParams(userId, operation, manifest, cursor, this.config.apiPageSize),
+    const response = await this.graphql(
+      session,
+      operation,
+      (manifest) => buildFollowsParams(userId, operation, manifest, cursor, this.config.apiPageSize),
+      signal,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Relationship request returned status ${response.status}.`, {
@@ -93,9 +116,16 @@ export class ApiEngine {
     return extractFollows(response.data);
   }
 
-  public async tweetResult(session: HttpSession, tweetId: string): Promise<TweetRecord | undefined> {
-    const response = await this.graphql(session, OPERATION.tweetResult, (manifest) =>
-      buildTweetResultParams(tweetId, manifest),
+  public async tweetResult(
+    session: HttpSession,
+    tweetId: string,
+    signal?: AbortSignal,
+  ): Promise<TweetRecord | undefined> {
+    const response = await this.graphql(
+      session,
+      OPERATION.tweetResult,
+      (manifest) => buildTweetResultParams(tweetId, manifest),
+      signal,
     );
     if (response.status !== 200 || !response.data)
       throw new NetworkError(`Tweet lookup returned status ${response.status}.`, {
@@ -108,6 +138,7 @@ export class ApiEngine {
     session: HttpSession,
     operation: string,
     buildParams: (manifest: Manifest) => Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<GraphqlResponse> {
     const send = (manifest: Manifest): Promise<GraphqlResponse> =>
       this.transport.get(
@@ -115,6 +146,7 @@ export class ApiEngine {
         endpointFor(manifest, operation),
         buildParams(manifest),
         manifest.timeoutSeconds * 1_000,
+        signal,
       );
     const manifest = await this.manifests.getManifest();
     try {
@@ -134,13 +166,14 @@ export class ApiEngine {
   public async resolveTarget(
     session: HttpSession,
     target: TargetInput,
+    signal?: AbortSignal,
   ): Promise<{ readonly username: string; readonly userId: string; readonly raw: Record<string, unknown> }> {
     const username =
       target.username?.replace(/^@/u, "") ?? target.profileUrl?.split("/").filter(Boolean).pop();
     if (target.userId && !username) return { username: target.userId, userId: target.userId, raw: {} };
     if (!username)
       throw new NetworkError("Target has no resolvable username or user ID.", { statusCode: 400 });
-    const raw = target.userId ? {} : await this.lookupUser(session, username);
+    const raw = target.userId ? {} : await this.lookupUser(session, username, signal);
     const userId = target.userId ?? String(raw.rest_id ?? raw.id ?? "");
     if (!userId) throw new NetworkError(`Target ${username} has no user id.`, { statusCode: 404 });
     return { username, userId, raw };

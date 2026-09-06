@@ -1,6 +1,7 @@
 import type { GraphqlResponse, HttpSession } from "../domain/http.js";
 import { AuthError, NetworkError, RateLimitError } from "../domain/errors.js";
 import { isRecord } from "../utils/guards.js";
+import { isAbortError } from "../utils/abort.js";
 import type { TransactionIdProvider } from "./transaction-id.js";
 import { effectiveStatus, parseRateLimitReset } from "../pool/cooldown.js";
 
@@ -12,20 +13,24 @@ export class GraphqlTransport {
     url: string,
     params: Readonly<Record<string, string>>,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<GraphqlResponse> {
     try {
       const method = session.post ? "POST" : "GET";
       const transactionId = await this.transactions.get(method, url);
+      const request = {
+        timeoutMs,
+        ...(signal ? { signal } : {}),
+        ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
+      };
       const response = await (session.post
         ? session.post(url, {
             body: graphqlBody(params),
-            timeoutMs,
-            ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
+            ...request,
           })
         : session.get(url, {
             query: params,
-            timeoutMs,
-            ...(transactionId ? { headers: { "X-Client-Transaction-Id": transactionId } } : {}),
+            ...request,
           }));
       const body = await response.text();
       const responseStatus = effectiveStatus(response.status, response.headers);
@@ -62,8 +67,11 @@ export class GraphqlTransport {
       return { data, status: mapped ?? responseStatus, headers: response.headers, snippet };
     } catch (error) {
       if (error instanceof AuthError || error instanceof RateLimitError) throw error;
-      if (error instanceof Error && error.name === "AbortError")
-        throw new NetworkError("GraphQL request timed out.", { endpoint: url });
+      if (isAbortError(error))
+        throw new NetworkError(
+          signal?.aborted ? "GraphQL request was cancelled." : "GraphQL request timed out.",
+          { endpoint: url, statusCode: signal?.aborted ? 499 : 408 },
+        );
       if (error instanceof NetworkError) throw error;
       throw new NetworkError(error instanceof Error ? error.message : String(error), { endpoint: url });
     }

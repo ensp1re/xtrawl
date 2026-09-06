@@ -15,6 +15,7 @@ export interface SearchContext {
   readonly pool: AccountPool;
   readonly engine: ApiEngine;
   readonly storage: StorageBundle;
+  readonly signal?: AbortSignal;
 }
 
 interface SearchTask {
@@ -147,11 +148,12 @@ async function requestSearchPage(
 ): Promise<SearchPageResult> {
   const page = await context.pool.execute(
     "search",
-    ({ session }) => context.engine.search(session, request, options.cursor),
+    ({ session }) => context.engine.search(session, request, options.cursor, context.signal),
     {
       countTweets: (value) => value.tweets.length,
       ...(options.onRetry ? { onRetry: options.onRetry } : {}),
       ...(options.maxAccountSwitches === undefined ? {} : { maxAccountSwitches: options.maxAccountSwitches }),
+      ...(context.signal ? { signal: context.signal } : {}),
     },
   );
   return { tweets: page.tweets, nextCursor: page.cursor };
