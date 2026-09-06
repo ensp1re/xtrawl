@@ -120,17 +120,23 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
   } catch {
     throw new ConfigError("proxyCheckUrl must be an HTTP(S) URL");
   }
-  if (
-    merged.minDelayMs < 0 ||
-    merged.leaseHeartbeatMs < 0 ||
-    merged.cooldownDefaultMs < 0 ||
-    merged.transientCooldownMs < 0 ||
-    merged.authCooldownMs < 0 ||
-    merged.cooldownJitterMs < 0 ||
-    merged.retryBaseMs < 0 ||
-    merged.retryMaxMs < 0
-  ) {
-    throw new ConfigError("delay and cooldown values cannot be negative");
+  const delayFields: Array<keyof ClientConfig> = [
+    "minDelayMs",
+    "leaseHeartbeatMs",
+    "cooldownDefaultMs",
+    "transientCooldownMs",
+    "authCooldownMs",
+    "cooldownJitterMs",
+    "retryBaseMs",
+    "retryMaxMs",
+  ];
+  for (const field of delayFields) {
+    const value = Number(merged[field]);
+    if (!Number.isFinite(value) || value < 0)
+      throw new ConfigError("delay and cooldown values cannot be negative");
+  }
+  if (merged.leaseHeartbeatMs > 0 && merged.leaseHeartbeatMs * 2 >= merged.leaseTtlMs) {
+    throw new ConfigError("leaseHeartbeatMs must leave a margin below leaseTtlMs");
   }
   return {
     ...merged,

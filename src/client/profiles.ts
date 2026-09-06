@@ -1,6 +1,6 @@
 import type { ProfileRecord } from "../domain/records.js";
 import type { TargetInput, UserInfoRequest } from "../domain/requests.js";
-import { RunFailed } from "../domain/errors.js";
+import { ConfigError, RunFailed } from "../domain/errors.js";
 import { mapProfile } from "../engine/extractors.js";
 import { saveRows } from "../output/writer.js";
 import { targetOutputName } from "../output/names.js";
@@ -14,7 +14,15 @@ export async function collectProfiles(
   options: UserInfoRequest,
 ): Promise<readonly ProfileRecord[]> {
   const records = new Map<number, ProfileRecord>();
-  const tasks = targets.flatMap((target, index) => (targetUsername(target) ? [{ index, target }] : []));
+  for (const target of targets) {
+    if (targetUsername(target)) continue;
+    if (target.userId)
+      throw new ConfigError(
+        `Profile lookup requires a username; numeric id ${target.userId} is not supported.`,
+      );
+    throw new ConfigError("Profile lookup requires a username.");
+  }
+  const tasks = targets.map((target, index) => ({ index, target }));
   const runner = new ExecutionRunner<(typeof tasks)[number]>({
     concurrency: Math.max(
       1,

@@ -8,7 +8,7 @@ export interface RunRecord {
   readonly queryHash?: string;
   readonly startedAt: string;
   readonly finishedAt?: string;
-  readonly status: "running" | "complete" | "failed";
+  readonly status: "running" | "complete" | "failed" | "partial" | "cancelled";
   readonly error?: unknown;
 }
 
@@ -34,7 +34,11 @@ export class RunRepository {
     return record;
   }
 
-  public finalize(id: string, status: "complete" | "failed", error?: unknown): boolean {
+  public finalize(
+    id: string,
+    status: "complete" | "failed" | "partial" | "cancelled",
+    error?: unknown,
+  ): boolean {
     return (
       this.database.run(
         "UPDATE runs SET finished_at=?, status=?, error_json=? WHERE id=?",

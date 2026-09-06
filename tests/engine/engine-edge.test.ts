@@ -26,9 +26,31 @@ function engineWith(handler: (url: string) => ReturnType<typeof response>) {
 
 describe("defensive response extraction", () => {
   test("returns empty pages for malformed external data", () => {
-    expect(extractSearchTweets(null)).toEqual({ tweets: [] });
-    expect(extractProfileTweets({ data: {} })).toEqual({ tweets: [] });
+    expect(extractSearchTweets(null)).toEqual({ tweets: [], emptyReason: "malformed" });
+    expect(extractProfileTweets({ data: {} })).toEqual({ tweets: [], emptyReason: "malformed" });
     expect(extractFollows({ data: {} })).toEqual({ users: [] });
+  });
+
+  test("keeps a bottom cursor when a top cursor appears later", () => {
+    const payload = {
+      data: {
+        search_by_raw_query: {
+          search_timeline: {
+            timeline: {
+              instructions: [
+                {
+                  entries: [
+                    { entryId: "cursor-bottom-1", content: { value: "forward", cursorType: "Bottom" } },
+                    { entryId: "cursor-top-1", content: { value: "backward", cursorType: "Top" } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    expect(extractSearchTweets(payload).cursor).toBe("forward");
   });
 
   test("supports fallback user nodes and profile fields", () => {

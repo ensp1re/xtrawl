@@ -74,9 +74,7 @@ export interface ProfileTimelineRequest {
   readonly maxPagesPerProfile?: number;
   readonly resume?: boolean;
   readonly initialCursors?: Readonly<Record<string, string>>;
-  readonly cursorHandoff?: boolean;
   readonly maxAccountSwitches?: number;
-  readonly allowAnonymous?: boolean;
   readonly maxEmptyPages?: number;
   readonly save?: boolean;
   readonly saveFormat?: "csv" | "json" | "both" | "ndjson";
@@ -93,7 +91,6 @@ export interface FollowsRequest {
   readonly maxPagesPerProfile?: number;
   readonly resume?: boolean;
   readonly initialCursors?: Readonly<Record<string, string>>;
-  readonly cursorHandoff?: boolean;
   readonly maxAccountSwitches?: number;
   readonly maxEmptyPages?: number;
   readonly rawJson?: boolean;

@@ -1,5 +1,6 @@
 import type { ClientConfig } from "../config/types.js";
-import { RunFailed, XTrawlError } from "../domain/errors.js";
+import { ConfigError, NetworkError, RunFailed, XTrawlError } from "../domain/errors.js";
+import { isAbortError } from "../utils/abort.js";
 import type { SearchPageResult, SearchResult, TweetRecord } from "../domain/records.js";
 import type { SearchPageRequest, SearchRequest } from "../domain/requests.js";
 import type { ApiEngine } from "../engine/api-engine.js";
@@ -50,6 +51,8 @@ export async function collectSearch(
   query: string,
   options: SearchRequest,
 ): Promise<SearchResult> {
+  if (options.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 0))
+    throw new ConfigError("limit must be a non-negative integer");
   const request = withDefaultBounds({ ...options, ...(query ? { searchQuery: query } : {}) });
   const hash = queryHash({ operation: "search", request });
   const run = context.storage.runs.create("search", hash);
@@ -157,12 +160,14 @@ export async function collectSearch(
         retries: outcome.retries + poolRetries,
       },
     };
-    context.storage.runs.finalize(run.id, "complete");
+    context.storage.runs.finalize(run.id, outcome.failed.length > 0 ? "partial" : "complete");
     return result;
   } catch (error) {
+    const cancelled =
+      isAbortError(error) || (error instanceof NetworkError && error.diagnostics.statusCode === 499);
     context.storage.runs.finalize(
       run.id,
-      "failed",
+      cancelled ? "cancelled" : "failed",
       error instanceof Error ? { name: error.name, message: error.message } : error,
     );
     throw error instanceof XTrawlError

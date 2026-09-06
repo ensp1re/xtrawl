@@ -49,7 +49,10 @@ export class ApiEngine {
       throw new NetworkError(`Search request returned status ${response.status}.`, {
         statusCode: response.status,
       });
-    return attachQuota(extractSearchTweets(response.data), response);
+    const page = extractSearchTweets(response.data);
+    if (page.emptyReason === "malformed")
+      throw new NetworkError("Search response was malformed.", { statusCode: 502 });
+    return attachQuota(page, response);
   }
 
   public async lookupUser(
@@ -93,7 +96,10 @@ export class ApiEngine {
       throw new NetworkError(`Profile timeline returned status ${response.status}.`, {
         statusCode: response.status,
       });
-    return attachQuota(extractProfileTweets(response.data), response);
+    const page = extractProfileTweets(response.data);
+    if (page.emptyReason === "malformed")
+      throw new NetworkError("Profile timeline response was malformed.", { statusCode: 502 });
+    return attachQuota(page, response);
   }
 
   public async followsPage(
