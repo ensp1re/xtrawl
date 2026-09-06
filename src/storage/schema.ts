@@ -50,5 +50,24 @@ export function initializeSchema(database: StateDatabase): void {
       fetched_at REAL NOT NULL,
       expires_at REAL NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS collection_progress (
+      collection_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      schema_version INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      cursor TEXT,
+      input_cursor TEXT,
+      accepted_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (collection_id, task_id)
+    );
+    CREATE TABLE IF NOT EXISTS accepted_records (
+      collection_id TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (collection_id, record_id)
+    );
   `);
 }

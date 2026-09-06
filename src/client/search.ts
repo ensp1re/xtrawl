@@ -4,11 +4,14 @@ import type { SearchPageResult, SearchResult, TweetRecord } from "../domain/reco
 import type { SearchPageRequest, SearchRequest } from "../domain/requests.js";
 import type { ApiEngine } from "../engine/api-engine.js";
 import type { AccountPool } from "../pool/account-pool.js";
+import { collectionIdentity } from "../query/collection-id.js";
 import { queryHash } from "../query/hash.js";
 import { ExecutionRunner } from "../runner/runner.js";
 import type { StorageBundle } from "../storage/index.js";
 import { saveRows } from "../output/writer.js";
 import { searchOutputName } from "../output/names.js";
+import { commitAcceptedPage } from "./page-commit.js";
+import { isRecord } from "../utils/guards.js";
 
 export interface SearchContext {
   readonly config: ClientConfig;
@@ -50,6 +53,7 @@ export async function collectSearch(
   const request = withDefaultBounds({ ...options, ...(query ? { searchQuery: query } : {}) });
   const hash = queryHash({ operation: "search", request });
   const run = context.storage.runs.create("search", hash);
+  const collectionId = collectionIdentity("search", request, request.resume ? {} : { runId: run.id });
   const usefulSplits =
     request.limit === undefined
       ? context.config.searchSplits
@@ -63,45 +67,71 @@ export async function collectSearch(
   let poolRetries = 0;
   let limitReached = false;
   try {
+    if (request.resume) {
+      for (const record of context.storage.progress.accepted(collectionId)) {
+        if (isTweetRecord(record.payload)) tweets.set(record.payload.tweetId, record.payload);
+      }
+      if (request.limit !== undefined && tweets.size >= request.limit) limitReached = true;
+    }
     for (const task of tasks) {
-      if (!request.resume) continue;
-      const saved = context.storage.checkpoints.get(task.id);
-      if (saved?.root) cursors.set(task.id, saved.root);
+      const saved = context.storage.progress.task(collectionId, task.id);
+      if (saved?.state === "exhausted") continue;
+      const cursor =
+        saved?.cursor ?? (request.resume ? context.storage.checkpoints.get(task.id)?.root : undefined);
+      if (cursor) cursors.set(task.id, cursor);
     }
     const runner = new ExecutionRunner<SearchTask>({
       concurrency: workerCount(context, tasks.length),
       maxAttempts: 1,
     });
-    const outcome = await runner.run(tasks, async (task) => {
-      let cursor = cursors.get(task.id);
-      let emptyPages = 0;
-      while (!limitReached) {
-        const page = await requestSearchPage(context, task.request, {
-          cursor,
-          onRetry: () => {
-            poolRetries += 1;
-          },
-        });
-        let added = 0;
-        for (const tweet of page.tweets) {
-          const previousSize = tweets.size;
-          if (!tweets.has(tweet.tweetId)) tweets.set(tweet.tweetId, tweet);
-          if (tweets.size > previousSize) added += 1;
-          if (request.limit !== undefined && tweets.size >= request.limit) {
-            limitReached = true;
-            break;
+    const outcome = await runner.run(
+      tasks.filter((task) => context.storage.progress.task(collectionId, task.id)?.state !== "exhausted"),
+      async (task) => {
+        let cursor = cursors.get(task.id);
+        let emptyPages = 0;
+        while (!limitReached) {
+          const inputCursor = cursor;
+          const page = await requestSearchPage(context, task.request, {
+            cursor: inputCursor,
+            onRetry: () => {
+              poolRetries += 1;
+            },
+          });
+          const batch: Array<{ id: string; payload: TweetRecord }> = [];
+          let added = 0;
+          let capped = false;
+          for (const tweet of page.tweets) {
+            if (tweets.has(tweet.tweetId) || context.storage.progress.hasRecord(collectionId, tweet.tweetId))
+              continue;
+            if (request.limit !== undefined && tweets.size + batch.length >= request.limit) {
+              capped = true;
+              limitReached = true;
+              break;
+            }
+            batch.push({ id: tweet.tweetId, payload: tweet });
+            added += 1;
           }
+          for (const item of batch) tweets.set(item.id, item.payload);
+          if (request.limit !== undefined && tweets.size >= request.limit) limitReached = true;
+          emptyPages = added === 0 && !capped ? emptyPages + 1 : 0;
+          const exhausted =
+            !capped &&
+            !limitReached &&
+            (!page.nextCursor || emptyPages >= (request.maxEmptyPages ?? context.config.maxEmptyPages));
+          commitAcceptedPage(context.storage, {
+            collectionId,
+            taskId: task.id,
+            state: capped || limitReached ? "capped" : exhausted ? "exhausted" : "active",
+            ...(inputCursor === undefined ? {} : { inputCursor }),
+            ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+            records: batch,
+            persistLegacyCheckpoint: Boolean(request.resume),
+          });
+          if (capped || limitReached || exhausted) break;
+          cursor = page.nextCursor;
         }
-        emptyPages = added === 0 ? emptyPages + 1 : 0;
-        if (page.nextCursor) {
-          cursors.set(task.id, page.nextCursor);
-          if (request.resume) context.storage.checkpoints.save(task.id, { root: page.nextCursor });
-        }
-        if (!page.nextCursor || emptyPages >= (request.maxEmptyPages ?? context.config.maxEmptyPages)) break;
-        cursor = page.nextCursor;
-      }
-      if (!limitReached) context.storage.checkpoints.clear(task.id);
-    });
+      },
+    );
     if (outcome.failed.length > 0 && (context.config.strict || tweets.size === 0))
       throw failureFor("Search", outcome.failed);
     const collected =
@@ -212,4 +242,8 @@ function searchDate(value: number): string {
 
 function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function isTweetRecord(value: unknown): value is TweetRecord {
+  return isRecord(value) && typeof value.tweetId === "string";
 }
