@@ -1,15 +1,10 @@
 import { abortError } from "../utils/abort.js";
+import type { ReadableHttpResponse } from "./types.js";
+
+export type { ReadableHttpResponse } from "./types.js";
 
 export const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 export const AUXILIARY_REQUEST_TIMEOUT_MS = 15_000;
-
-export interface ReadableHttpResponse {
-  readonly body?: {
-    getReader(): ReadableStreamDefaultReader<Uint8Array>;
-    cancel?(reason?: unknown): Promise<void>;
-  } | null;
-  text(): Promise<string>;
-}
 
 export async function readResponseText(
   response: ReadableHttpResponse,

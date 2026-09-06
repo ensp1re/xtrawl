@@ -1,14 +1,8 @@
 import type { ClientTransaction } from "x-client-transaction-id";
 import { delay } from "../utils/abort.js";
+import type { TransactionIdOptions, TransactionIdSource } from "./types.js";
 
-export interface TransactionIdSource {
-  readonly create?: (method: string, url: string) => Promise<string | undefined>;
-}
-
-export interface TransactionIdOptions {
-  readonly enabled?: boolean;
-  readonly ttlMs?: number;
-}
+export type { TransactionIdOptions, TransactionIdSource } from "./types.js";
 
 export class TransactionIdProvider {
   private client?: ClientTransaction;

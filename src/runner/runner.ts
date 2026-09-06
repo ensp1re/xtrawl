@@ -1,16 +1,7 @@
-import { TaskQueue, type QueueTask } from "./task-queue.js";
+import type { QueueTask, RunnerOptions, RunnerResult } from "../domain/runner.js";
+import { TaskQueue } from "./task-queue.js";
 
-export interface RunnerOptions {
-  readonly concurrency: number;
-  readonly leaseTtlMs?: number;
-  readonly maxAttempts?: number;
-}
-
-export interface RunnerResult<T> {
-  readonly complete: readonly T[];
-  readonly failed: readonly { readonly task: QueueTask<T>; readonly error: unknown }[];
-  readonly retries: number;
-}
+export type { RunnerOptions, RunnerResult } from "../domain/runner.js";
 
 export class ExecutionRunner<T> {
   public constructor(private readonly options: RunnerOptions) {}

@@ -11,6 +11,16 @@ export interface ManifestPayload {
   readonly timeoutSeconds?: number;
 }
 
+export interface ManifestCreateOptions {
+  readonly allowedOrigins?: readonly string[];
+}
+
+export interface ManifestScrapeOptions {
+  readonly authToken?: string;
+  readonly fetcher?: typeof fetch;
+  readonly maxScripts?: number;
+}
+
 export interface Manifest {
   readonly version: string;
   readonly queryIds: Readonly<Record<string, string>>;

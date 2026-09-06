@@ -25,10 +25,9 @@ const RESERVED_PATHS = new Set([
   "signup",
 ]);
 
-export interface NormalizedTargets {
-  readonly targets: readonly TargetInput[];
-  readonly skipped: readonly { readonly raw: string; readonly reason: string }[];
-}
+import type { NormalizedTargets } from "./types.js";
+
+export type { NormalizedTargets } from "./types.js";
 
 export function normalizeTargets(values: readonly (string | TargetInput)[]): NormalizedTargets {
   const targets: TargetInput[] = [];

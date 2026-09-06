@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
+import type { SqlRow } from "./types.js";
 
-export type SqlRow = Record<string, unknown>;
+export type { SqlRow } from "./types.js";
 
 export class StateDatabase {
   public readonly path: string;

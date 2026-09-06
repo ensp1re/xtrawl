@@ -53,7 +53,8 @@
       "npm run verify (manual searchPage cursor API; 112 deterministic tests passed and 3 credential-gated live tests skipped)",
       "npm run verify and npm pack --dry-run (xtrawl@0.1.2 release candidate)",
       "npm publish xtrawl@0.1.2 (prepublish verification passed)",
-      "clean-room registry install of xtrawl@0.1.2 (public API import and installed CLI help)"
+      "clean-room registry install of xtrawl@0.1.2 (public API import and installed CLI help)",
+      "npm run verify (TypeScript-structure apply: domain contracts, constants, CollectionContext unification; 146 passed, 3 live skipped)"
     ],
     "failed": [
       "initial GitHub Actions run on Node.js 22.5.0 (bundled npm 10.8.2 exited before installing development dependencies)"

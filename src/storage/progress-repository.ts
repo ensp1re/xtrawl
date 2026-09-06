@@ -1,31 +1,9 @@
-import type { StateDatabase } from "./database.js";
+import { PROGRESS_STATE } from "../constants/collection.js";
+import type { AcceptedRecord, PageCommit, ProgressState, TaskProgress } from "../domain/collection.js";
 import { COLLECTION_SCHEMA_VERSION } from "../query/collection-id.js";
+import type { StateDatabase } from "./database.js";
 
-export type ProgressState = "pending" | "active" | "exhausted" | "capped" | "failed" | "cancelled";
-
-export interface TaskProgress {
-  readonly collectionId: string;
-  readonly taskId: string;
-  readonly state: ProgressState;
-  readonly cursor?: string;
-  readonly inputCursor?: string;
-  readonly acceptedIds: readonly string[];
-}
-
-export interface AcceptedRecord {
-  readonly id: string;
-  readonly taskId: string;
-  readonly payload: unknown;
-}
-
-export interface PageCommit {
-  readonly collectionId: string;
-  readonly taskId: string;
-  readonly state: ProgressState;
-  readonly inputCursor?: string;
-  readonly nextCursor?: string;
-  readonly records: readonly { readonly id: string; readonly payload: unknown }[];
-}
+export type { AcceptedRecord, PageCommit, ProgressState, TaskProgress } from "../domain/collection.js";
 
 export class ProgressRepository {
   public constructor(private readonly database: StateDatabase) {}
@@ -48,7 +26,7 @@ export class ProgressRepository {
       const acceptedIds = [
         ...new Set([...(existing?.acceptedIds ?? []), ...commit.records.map((record) => record.id)]),
       ];
-      const storedCursor = commit.state === "capped" ? commit.inputCursor : commit.nextCursor;
+      const storedCursor = commit.state === PROGRESS_STATE.CAPPED ? commit.inputCursor : commit.nextCursor;
       this.database.run(
         `INSERT INTO collection_progress(
            collection_id,task_id,schema_version,state,cursor,input_cursor,accepted_json,updated_at

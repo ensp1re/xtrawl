@@ -18,6 +18,9 @@ import type {
   TargetInput,
   UserInfoRequest,
 } from "../domain/requests.js";
+import { ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
+import { CLI_COMMAND } from "../constants/cli.js";
+import { FOLLOW_TYPE } from "../constants/requests.js";
 import { ConfigError } from "../domain/errors.js";
 import type { DiagnosticEvent, DiagnosticListener } from "../domain/diagnostics.js";
 import { combineSignals } from "../utils/abort.js";
@@ -34,10 +37,10 @@ import { GraphqlTransport } from "../transport/graphql.js";
 import { SessionBuilder } from "../transport/session.js";
 import { TransactionIdProvider } from "../transport/transaction-id.js";
 import { normalizeTargets } from "../query/targets.js";
-import { collectFollows, collectProfileTweets, type CollectionContext } from "./collectors.js";
+import { collectFollows, collectProfileTweets } from "./collectors.js";
 import { collectSearch, collectSearchPage } from "./search.js";
 import { collectProfiles } from "./profiles.js";
-import type { ClientInspection, ClientOptions } from "./types.js";
+import type { ClientInspection, ClientOptions, CollectionContext } from "./types.js";
 import { XTrawlDatabase } from "./database.js";
 import { XTrawlAccounts } from "./accounts.js";
 
@@ -136,7 +139,7 @@ export class XTrawl {
         if (!cookies?.ct0) return false;
         await this.accountStore.upsert({
           ...account,
-          status: 1,
+          status: ACCOUNT_STATUS_CODE.HEALTHY,
           availableUntil: 0,
           csrfToken: cookies.ct0,
           cookies: { ...account.cookies, ...cookies },
@@ -151,7 +154,10 @@ export class XTrawl {
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
-    return this.track(collectSearch(this.collectionContext(options.signal), query, options), "search");
+    return this.track(
+      collectSearch(this.collectionContext(options.signal), query, options),
+      CLI_COMMAND.SEARCH,
+    );
   }
 
   public async searchPage(query = "", options: SearchPageRequest = {}): Promise<SearchPageResult> {
@@ -180,7 +186,7 @@ export class XTrawl {
     const normalized = normalizeTargets(targets).targets;
     return this.track(
       collectProfiles(this.collectionContext(options.signal), normalized, options),
-      "user-info",
+      CLI_COMMAND.USER_INFO,
     );
   }
 
@@ -198,7 +204,7 @@ export class XTrawl {
           this.engine.tweetResult(session, tweetId, leaseSignal ?? signal, chargeRequest),
         signal ? { signal } : {},
       ),
-      "tweet",
+      CLI_COMMAND.TWEET,
     );
   }
 
@@ -212,7 +218,7 @@ export class XTrawl {
         normalizeTargets(targets).targets,
         options,
       ),
-      "profile-tweets",
+      CLI_COMMAND.PROFILE_TWEETS,
     );
   }
 
@@ -225,9 +231,9 @@ export class XTrawl {
       collectFollows(this.collectionContext(options.signal), normalized, {
         targets: normalized,
         ...options,
-        followType: "followers",
+        followType: FOLLOW_TYPE.FOLLOWERS,
       }),
-      "followers",
+      CLI_COMMAND.FOLLOWERS,
     );
   }
 
@@ -240,9 +246,9 @@ export class XTrawl {
       collectFollows(this.collectionContext(options.signal), normalized, {
         targets: normalized,
         ...options,
-        followType: "following",
+        followType: FOLLOW_TYPE.FOLLOWING,
       }),
-      "following",
+      CLI_COMMAND.FOLLOWING,
     );
   }
 
@@ -255,9 +261,9 @@ export class XTrawl {
       collectFollows(this.collectionContext(options.signal), normalized, {
         targets: normalized,
         ...options,
-        followType: "verified_followers",
+        followType: FOLLOW_TYPE.VERIFIED_FOLLOWERS,
       }),
-      "verified-followers",
+      CLI_COMMAND.VERIFIED_FOLLOWERS,
     );
   }
 

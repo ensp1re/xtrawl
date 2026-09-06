@@ -1,11 +1,15 @@
-import type { FeatureFlags, FieldToggles, Manifest, ManifestPayload } from "../domain/manifest.js";
+import type {
+  FeatureFlags,
+  FieldToggles,
+  Manifest,
+  ManifestCreateOptions,
+  ManifestPayload,
+} from "../domain/manifest.js";
 import { ManifestError } from "../domain/errors.js";
 import { asInteger, asString, isRecord } from "../utils/guards.js";
 import { assertCredentialDestination } from "./destinations.js";
 
-export interface ManifestCreateOptions {
-  readonly allowedOrigins?: readonly string[];
-}
+export type { ManifestCreateOptions } from "../domain/manifest.js";
 
 export function createManifest(payload: ManifestPayload, options: ManifestCreateOptions = {}): Manifest {
   if (!payload || !isRecord(payload.queryIds) || !isRecord(payload.endpoints)) {

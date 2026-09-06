@@ -6,7 +6,7 @@ import { saveRows } from "../output/writer.js";
 import { targetOutputName } from "../output/names.js";
 import { targetUsername } from "../query/builder.js";
 import { ExecutionRunner } from "../runner/runner.js";
-import type { CollectionContext } from "./collectors.js";
+import type { CollectionContext } from "./types.js";
 
 export async function collectProfiles(
   context: CollectionContext,

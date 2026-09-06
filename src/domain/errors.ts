@@ -1,4 +1,6 @@
-export type ErrorCategory = "auth" | "rate_limit" | "network" | "proxy" | "transient" | "runtime";
+import { ERROR_CATEGORY } from "../constants/errors.js";
+
+export type ErrorCategory = (typeof ERROR_CATEGORY)[keyof typeof ERROR_CATEGORY];
 
 export interface ErrorDiagnostics {
   readonly statusCode?: number;
@@ -59,25 +61,25 @@ export class RunFailed extends EngineError {
 
 export class NetworkError extends RunFailed {
   public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
-    super(message, { ...diagnostics, category: "network" });
+    super(message, { ...diagnostics, category: ERROR_CATEGORY.NETWORK });
   }
 }
 
 export class ProxyError extends RunFailed {
   public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
-    super(message, { ...diagnostics, category: "proxy" });
+    super(message, { ...diagnostics, category: ERROR_CATEGORY.PROXY });
   }
 }
 
 export class RateLimitError extends RunFailed {
   public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
-    super(message, { ...diagnostics, category: "rate_limit" });
+    super(message, { ...diagnostics, category: ERROR_CATEGORY.RATE_LIMIT });
   }
 }
 
 export class AuthError extends RunFailed {
   public constructor(message: string, diagnostics: ErrorDiagnostics = {}) {
-    super(message, { ...diagnostics, category: "auth" });
+    super(message, { ...diagnostics, category: ERROR_CATEGORY.AUTH });
   }
 }
 
@@ -98,27 +100,27 @@ export class AccountSessionBuildError extends XTrawlError {
   ) {
     super(code, `${code}:${reason}`, {
       statusCode: options.statusCode ?? 599,
-      category: options.category ?? "transient",
+      category: options.category ?? ERROR_CATEGORY.TRANSIENT,
     });
     this.statusCode = options.statusCode ?? 599;
-    this.category = options.category ?? "transient";
+    this.category = options.category ?? ERROR_CATEGORY.TRANSIENT;
   }
 }
 
 export class AccountSessionAuthError extends AccountSessionBuildError {
   public constructor(code: string, reason: string) {
-    super(code, reason, { statusCode: 401, category: "auth" });
+    super(code, reason, { statusCode: 401, category: ERROR_CATEGORY.AUTH });
   }
 }
 
 export class AccountSessionRuntimeError extends AccountSessionBuildError {
   public constructor(code: string, reason: string) {
-    super(code, reason, { statusCode: 500, category: "runtime" });
+    super(code, reason, { statusCode: 500, category: ERROR_CATEGORY.RUNTIME });
   }
 }
 
 export class AccountSessionTransientError extends AccountSessionBuildError {
   public constructor(code: string, reason: string) {
-    super(code, reason, { statusCode: 599, category: "transient" });
+    super(code, reason, { statusCode: 599, category: ERROR_CATEGORY.TRANSIENT });
   }
 }

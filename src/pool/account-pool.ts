@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ACCOUNT_HEALTH, ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
 import type { AccountLease, AccountRecord, AccountSummary } from "../domain/accounts.js";
 import type { AccountLeaseCompletion, AccountStateStore } from "../domain/account-state.js";
 import {
@@ -17,23 +18,10 @@ import { computeCooldown } from "./cooldown.js";
 import type { SessionBuilder } from "../transport/session.js";
 import { isRecord } from "../utils/guards.js";
 import { combineSignals, isAbortError, throwIfAborted } from "../utils/abort.js";
+import type { AccountRepair, PoolExecutionContext, PoolExecutionOptions } from "../domain/pool.js";
 import { TokenBucketLimiter, sleep } from "./limiter.js";
 
-export interface PoolExecutionContext {
-  readonly account: AccountLease;
-  readonly session: HttpSession;
-  readonly signal?: AbortSignal;
-  chargeRequest(): void;
-}
-
-export interface PoolExecutionOptions<T> {
-  readonly countTweets?: (value: T) => number;
-  readonly onRetry?: (error: unknown, attempt: number) => void;
-  readonly maxAccountSwitches?: number;
-  readonly signal?: AbortSignal;
-}
-
-export type AccountRepair = (account: AccountLease) => Promise<boolean>;
+export type { AccountRepair, PoolExecutionContext, PoolExecutionOptions } from "../domain/pool.js";
 
 export class AccountPool {
   private readonly limiters = new Map<string, TokenBucketLimiter>();
@@ -81,7 +69,7 @@ export class AccountPool {
       const switchLimit = options.maxAccountSwitches ?? this.config.maxAccountSwitches;
       if (seenAccounts.size > switchLimit + 1) {
         await this.completeLease(account, {
-          status: "healthy",
+          status: ACCOUNT_HEALTH.HEALTHY,
           availableUntil: 0,
           pages: 0,
           tweets: 0,
@@ -118,7 +106,7 @@ export class AccountPool {
         const quota = readQuota(value);
         const exhausted = quota?.exhausted === true || quota?.remaining === 0;
         await this.completeLease(account, {
-          status: exhausted ? "cooling_down" : "healthy",
+          status: exhausted ? ACCOUNT_HEALTH.COOLING_DOWN : ACCOUNT_HEALTH.HEALTHY,
           availableUntil: exhausted ? (quota?.resetAt ?? Date.now() + this.config.cooldownDefaultMs) : 0,
           pages: Math.max(requests, 1),
           tweets: Math.max(0, options.countTweets?.(value) ?? countTweets(value)),
@@ -269,15 +257,16 @@ export function summarizeAccounts(
     total: accounts.length,
     eligible: accounts.filter(
       (account) =>
-        account.status !== 0 &&
-        !(account.status === 2 && (account.availableUntil ?? 0) > now) &&
+        account.status !== ACCOUNT_STATUS_CODE.UNUSABLE &&
+        !(account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (account.availableUntil ?? 0) > now) &&
         Boolean(account.authToken && account.csrfToken) &&
         (account.dailyRequests ?? 0) < config.dailyRequestsLimit &&
         (account.dailyTweets ?? 0) < config.dailyTweetsLimit,
     ).length,
-    unusable: accounts.filter((account) => account.status === 0).length,
-    coolingDown: accounts.filter((account) => account.status === 2 && (account.availableUntil ?? 0) > now)
-      .length,
+    unusable: accounts.filter((account) => account.status === ACCOUNT_STATUS_CODE.UNUSABLE).length,
+    coolingDown: accounts.filter(
+      (account) => account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (account.availableUntil ?? 0) > now,
+    ).length,
   };
 }
 

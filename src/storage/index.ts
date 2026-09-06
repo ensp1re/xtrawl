@@ -5,7 +5,7 @@ import { CheckpointRepository } from "./checkpoint-repository.js";
 import { ManifestRepository } from "./manifest-repository.js";
 import { ProgressRepository } from "./progress-repository.js";
 import { RunRepository } from "./run-repository.js";
-import type { AccountRepositoryOptions } from "./account-repository.js";
+import type { AccountRepositoryOptions } from "./types.js";
 
 export interface StorageBundle {
   readonly database: StateDatabase;

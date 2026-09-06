@@ -1,4 +1,4 @@
-import type { ManifestPayload } from "../domain/manifest.js";
+import type { ManifestPayload, ManifestScrapeOptions } from "../domain/manifest.js";
 import {
   AUXILIARY_REQUEST_TIMEOUT_MS,
   cancelBody,
@@ -17,11 +17,7 @@ const OPERATION_NAMES: Record<string, string> = {
   TweetResultByRestId: "tweet_result",
 };
 
-export interface ManifestScrapeOptions {
-  readonly authToken?: string;
-  readonly fetcher?: typeof fetch;
-  readonly maxScripts?: number;
-}
+export type { ManifestScrapeOptions } from "../domain/manifest.js";
 
 export function extractManifestFromJavascript(source: string, fallback: ManifestPayload): ManifestPayload {
   const operationFeatures = extractOperationFeaturesFromJavascript(source);

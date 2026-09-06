@@ -1,37 +1,19 @@
-import type { ClientConfig } from "../config/types.js";
+import { PROGRESS_STATE } from "../constants/collection.js";
+import { RUN_STATUS } from "../constants/runs.js";
 import { ConfigError, NetworkError, RunFailed, XTrawlError } from "../domain/errors.js";
 import { isAbortError } from "../utils/abort.js";
 import type { SearchPageResult, SearchResult, TweetRecord } from "../domain/records.js";
 import type { SearchPageRequest, SearchRequest } from "../domain/requests.js";
-import type { ApiEngine } from "../engine/api-engine.js";
-import type { AccountPool } from "../pool/account-pool.js";
 import { collectionIdentity } from "../query/collection-id.js";
 import { queryHash } from "../query/hash.js";
 import { ExecutionRunner } from "../runner/runner.js";
-import type { StorageBundle } from "../storage/index.js";
 import { saveRows } from "../output/writer.js";
 import { searchOutputName } from "../output/names.js";
 import { commitAcceptedPage } from "./page-commit.js";
+import type { PageExecutionOptions, SearchContext, SearchTask } from "./types.js";
 import { isRecord } from "../utils/guards.js";
 
-export interface SearchContext {
-  readonly config: ClientConfig;
-  readonly pool: AccountPool;
-  readonly engine: ApiEngine;
-  readonly storage: StorageBundle;
-  readonly signal?: AbortSignal;
-}
-
-interface SearchTask {
-  readonly id: string;
-  readonly request: SearchRequest;
-}
-
-interface PageExecutionOptions {
-  readonly cursor?: string;
-  readonly maxAccountSwitches?: number;
-  readonly onRetry?: () => void;
-}
+export type { SearchContext } from "./types.js";
 
 export async function collectSearchPage(
   context: SearchContext,
@@ -78,7 +60,7 @@ export async function collectSearch(
     }
     for (const task of tasks) {
       const saved = context.storage.progress.task(collectionId, task.id);
-      if (saved?.state === "exhausted") continue;
+      if (saved?.state === PROGRESS_STATE.EXHAUSTED) continue;
       const cursor =
         saved?.cursor ?? (request.resume ? context.storage.checkpoints.get(task.id)?.root : undefined);
       if (cursor) cursors.set(task.id, cursor);
@@ -88,7 +70,9 @@ export async function collectSearch(
       maxAttempts: 1,
     });
     const outcome = await runner.run(
-      tasks.filter((task) => context.storage.progress.task(collectionId, task.id)?.state !== "exhausted"),
+      tasks.filter(
+        (task) => context.storage.progress.task(collectionId, task.id)?.state !== PROGRESS_STATE.EXHAUSTED,
+      ),
       async (task) => {
         let cursor = cursors.get(task.id);
         let emptyPages = 0;
@@ -124,7 +108,12 @@ export async function collectSearch(
           commitAcceptedPage(context.storage, {
             collectionId,
             taskId: task.id,
-            state: capped || limitReached ? "capped" : exhausted ? "exhausted" : "active",
+            state:
+              capped || limitReached
+                ? PROGRESS_STATE.CAPPED
+                : exhausted
+                  ? PROGRESS_STATE.EXHAUSTED
+                  : PROGRESS_STATE.ACTIVE,
             ...(inputCursor === undefined ? {} : { inputCursor }),
             ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
             records: batch,
@@ -160,14 +149,17 @@ export async function collectSearch(
         retries: outcome.retries + poolRetries,
       },
     };
-    context.storage.runs.finalize(run.id, outcome.failed.length > 0 ? "partial" : "complete");
+    context.storage.runs.finalize(
+      run.id,
+      outcome.failed.length > 0 ? RUN_STATUS.PARTIAL : RUN_STATUS.COMPLETE,
+    );
     return result;
   } catch (error) {
     const cancelled =
       isAbortError(error) || (error instanceof NetworkError && error.diagnostics.statusCode === 499);
     context.storage.runs.finalize(
       run.id,
-      cancelled ? "cancelled" : "failed",
+      cancelled ? RUN_STATUS.CANCELLED : RUN_STATUS.FAILED,
       error instanceof Error ? { name: error.name, message: error.message } : error,
     );
     throw error instanceof XTrawlError

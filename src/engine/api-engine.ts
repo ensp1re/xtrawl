@@ -3,7 +3,9 @@ import type { GraphqlResponse, HttpSession } from "../domain/http.js";
 import type { Manifest } from "../domain/manifest.js";
 import type { FollowType, ProfileTimelineRequest, SearchRequest, TargetInput } from "../domain/requests.js";
 import type { TweetRecord } from "../domain/records.js";
-import type { FollowPage, RequestQuota, TweetPage } from "./extractors.js";
+import type { FollowPage, RequestQuota, TweetPage } from "../domain/pages.js";
+import { EMPTY_REASON } from "../constants/pages.js";
+import { FOLLOW_TYPE } from "../constants/requests.js";
 import {
   extractFollows,
   extractProfileTweets,
@@ -50,7 +52,7 @@ export class ApiEngine {
         statusCode: response.status,
       });
     const page = extractSearchTweets(response.data);
-    if (page.emptyReason === "malformed")
+    if (page.emptyReason === EMPTY_REASON.MALFORMED)
       throw new NetworkError("Search response was malformed.", { statusCode: 502 });
     return attachQuota(page, response);
   }
@@ -97,7 +99,7 @@ export class ApiEngine {
         statusCode: response.status,
       });
     const page = extractProfileTweets(response.data);
-    if (page.emptyReason === "malformed")
+    if (page.emptyReason === EMPTY_REASON.MALFORMED)
       throw new NetworkError("Profile timeline response was malformed.", { statusCode: 502 });
     return attachQuota(page, response);
   }
@@ -111,9 +113,9 @@ export class ApiEngine {
     onAttempt?: () => void,
   ): Promise<FollowPage> {
     const operation =
-      type === "followers"
+      type === FOLLOW_TYPE.FOLLOWERS
         ? OPERATION.followers
-        : type === "verified_followers"
+        : type === FOLLOW_TYPE.VERIFIED_FOLLOWERS
           ? OPERATION.verifiedFollowers
           : OPERATION.following;
     const response = await this.graphql(

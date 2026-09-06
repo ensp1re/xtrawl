@@ -1,11 +1,10 @@
 import type { ClientConfig } from "../config/types.js";
-import type { Manifest, ManifestPayload } from "../domain/manifest.js";
+import type { Manifest, ManifestPayload, ManifestScrapeOptions } from "../domain/manifest.js";
 import { ManifestError } from "../domain/errors.js";
 import type { ManifestRepository } from "../storage/manifest-repository.js";
 import { DEFAULT_MANIFEST } from "./default-manifest.js";
 import { createManifest } from "./model.js";
 import { scrapeManifestFromWeb } from "./scraper.js";
-import type { ManifestScrapeOptions } from "./scraper.js";
 
 export const LIVE_MANIFEST_CACHE_KEY = "xtrawl:live-web";
 const REFRESH_BACKOFF_MS = 30_000;

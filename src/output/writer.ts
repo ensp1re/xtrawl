@@ -1,10 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { SAVE_FORMAT } from "../constants/output.js";
+import type { OutputFormat } from "../domain/output.js";
 import type { TweetRecord } from "../domain/records.js";
 import { writeCsv } from "./csv-writer.js";
 import { writeJson, writeNdjson } from "./json-writer.js";
 
-export type OutputFormat = "csv" | "json" | "both" | "ndjson";
+export type { OutputFormat } from "../domain/output.js";
 
 export async function saveRows(
   name: string,
@@ -12,11 +14,11 @@ export async function saveRows(
   options: { readonly directory: string; readonly format: OutputFormat; readonly append?: boolean },
 ): Promise<void> {
   await mkdir(options.directory, { recursive: true });
-  if (options.format === "json" || options.format === "both")
+  if (options.format === SAVE_FORMAT.JSON || options.format === SAVE_FORMAT.BOTH)
     await writeJson(join(options.directory, `${name}.json`), rows, options.append);
-  if (options.format === "ndjson")
+  if (options.format === SAVE_FORMAT.NDJSON)
     await writeNdjson(join(options.directory, `${name}.ndjson`), rows, options.append);
-  if (options.format === "csv" || options.format === "both")
+  if (options.format === SAVE_FORMAT.CSV || options.format === SAVE_FORMAT.BOTH)
     await writeCsv(join(options.directory, `${name}.csv`), rows.map(toFlatRow), options.append);
 }
 

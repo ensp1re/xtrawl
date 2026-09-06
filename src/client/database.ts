@@ -2,26 +2,14 @@ import { bootstrapCookiesFromAuthToken } from "../auth/bootstrap.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
 import { loadAccountFromEnvironmentSync } from "../config/environment.js";
-import type { AccountInput, AccountRecord, ProxySettings } from "../domain/accounts.js";
+import { ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
+import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
 import type { StorageBundle } from "../storage/index.js";
 import { tokenFingerprint } from "../utils/fingerprint.js";
 import { redactProxy } from "../utils/redact.js";
+import type { AccountImportOptions, AccountListOptions } from "./types.js";
 
-export interface AccountListOptions {
-  readonly eligibleOnly?: boolean;
-  readonly unusableOnly?: boolean;
-  readonly includeCookies?: boolean;
-  readonly revealSecrets?: boolean;
-}
-
-export interface AccountImportOptions {
-  readonly accountsFile?: string;
-  readonly cookiesFile?: string;
-  readonly envFile?: string;
-  readonly cookies?: unknown;
-  readonly accounts?: readonly AccountInput[];
-  readonly proxy?: string | ProxySettings;
-}
+export type { AccountImportOptions, AccountListOptions } from "./types.js";
 
 export class XTrawlDatabase {
   public constructor(private readonly storage: StorageBundle) {}
@@ -34,7 +22,7 @@ export class XTrawlDatabase {
     return this.storage.accounts
       .list()
       .filter((account) => !options.eligibleOnly || this.storage.accounts.eligible(account))
-      .filter((account) => !options.unusableOnly || account.status === 0)
+      .filter((account) => !options.unusableOnly || account.status === ACCOUNT_STATUS_CODE.UNUSABLE)
       .map((account) => redactAccount(account, options));
   }
 
@@ -69,7 +57,7 @@ export class XTrawlDatabase {
     if (!cookies?.ct0) return false;
     this.storage.accounts.upsert({
       ...account,
-      status: 1,
+      status: ACCOUNT_STATUS_CODE.HEALTHY,
       availableUntil: 0,
       csrfToken: cookies.ct0,
       cookies: { ...account.cookies, ...cookies },

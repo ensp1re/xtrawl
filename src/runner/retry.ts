@@ -1,12 +1,9 @@
 import type { XTrawlError } from "../domain/errors.js";
+import type { RetryOptions } from "../domain/runner.js";
 import { sleep } from "../pool/limiter.js";
 import { isAbortError, throwIfAborted } from "../utils/abort.js";
 
-export interface RetryOptions {
-  readonly maxAttempts: number;
-  readonly baseMs: number;
-  readonly maxMs: number;
-}
+export type { RetryOptions } from "../domain/runner.js";
 
 export async function withRetry<T>(
   operation: (attempt: number) => Promise<T>,

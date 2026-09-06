@@ -1,3 +1,4 @@
+import type { API_HTTP_MODE } from "../constants/config.js";
 import type { CookieMap, ProxySettings } from "./accounts.js";
 
 export interface HttpResponse {
@@ -30,7 +31,7 @@ export interface SessionFactoryOptions {
   readonly bearerToken?: string;
   readonly userAgent?: string;
   readonly impersonate?: string;
-  readonly httpMode?: "auto" | "async" | "sync";
+  readonly httpMode?: (typeof API_HTTP_MODE)[keyof typeof API_HTTP_MODE];
 }
 
 export type SessionFactory = (options: SessionFactoryOptions) => HttpSession;

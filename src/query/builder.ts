@@ -1,3 +1,4 @@
+import { SEARCH_DISPLAY } from "../constants/requests.js";
 import type { Manifest } from "../domain/manifest.js";
 import { ManifestError } from "../domain/errors.js";
 import type { ProfileTimelineRequest, SearchRequest, TargetInput } from "../domain/requests.js";
@@ -38,7 +39,10 @@ export function buildSearchParams(
     rawQuery,
     count: Math.max(1, Math.min(pageSize, 100)),
     querySource: "typed_query",
-    product: (request.displayType ?? "Top").toLowerCase() === "latest" ? "Latest" : "Top",
+    product:
+      (request.displayType ?? SEARCH_DISPLAY.TOP).toLowerCase() === SEARCH_DISPLAY.LATEST.toLowerCase()
+        ? SEARCH_DISPLAY.LATEST
+        : SEARCH_DISPLAY.TOP,
     withGrokTranslatedBio: false,
     ...(cursor ? { cursor } : {}),
   };

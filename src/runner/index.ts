@@ -1,4 +1,6 @@
 export { ExecutionRunner } from "./runner.js";
+export type { RunnerOptions, RunnerResult } from "./runner.js";
 export { TaskQueue } from "./task-queue.js";
 export type { QueueTask } from "./task-queue.js";
 export { withRetry } from "./retry.js";
+export type { RetryOptions } from "./retry.js";

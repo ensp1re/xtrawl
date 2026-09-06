@@ -1,6 +1,6 @@
 import { fetch as undiciFetch, type Dispatcher } from "undici";
 import type { AccountRecord, AuthMaterial, CookieMap, ProxySettings } from "../domain/accounts.js";
-import type { HttpRequestOptions, HttpResponse, HttpSession, SessionFactory } from "../domain/http.js";
+import type { HttpRequestOptions, HttpResponse, HttpSession } from "../domain/http.js";
 import { AccountSessionRuntimeError } from "../domain/errors.js";
 import { ProxyError } from "../domain/errors.js";
 import { prepareAuthMaterial } from "../auth/material.js";
@@ -8,19 +8,12 @@ import { combineSignals, isAbortError } from "../utils/abort.js";
 import { cancelBody, DEFAULT_MAX_RESPONSE_BYTES, readResponseText } from "./body.js";
 import { DispatcherPool } from "./dispatcher-pool.js";
 import { proxyToUrl } from "./proxy.js";
+import type { SessionBuilderOptions } from "./types.js";
+
+export type { SessionBuilderOptions } from "./types.js";
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36";
-
-export interface SessionBuilderOptions {
-  readonly bearerToken: string;
-  readonly defaultProxy?: string | ProxySettings;
-  readonly userAgent?: string;
-  readonly httpMode?: "auto" | "async" | "sync";
-  readonly impersonate?: string;
-  readonly fetcher?: typeof undiciFetch;
-  readonly factory?: SessionFactory;
-}
 
 export class SessionBuilder {
   private readonly healthyProxies = new Map<string, number>();

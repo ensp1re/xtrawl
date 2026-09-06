@@ -6,7 +6,8 @@ import type {
   CookieMap,
   ProxySettings,
 } from "../domain/accounts.js";
-import type { AccountStatus } from "../domain/accounts.js";
+import { ACCOUNT_HEALTH, ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
+import type { AccountRepositoryOptions, ReleaseOptions } from "./types.js";
 import type {
   AccountLeaseCompletion,
   AccountLeaseRequest,
@@ -17,27 +18,14 @@ import { StateDatabase } from "./database.js";
 import { rowToAccount } from "./account-row.js";
 
 export { rowToAccount } from "./account-row.js";
-
-export interface ReleaseOptions {
-  readonly status?: AccountStatus;
-  readonly availableUntil?: number;
-  readonly lastErrorCode?: number;
-  readonly cooldownReason?: string;
-  readonly dailyRequests?: number;
-}
-
-export interface AccountRepositoryOptions {
-  readonly dailyRequestsLimit?: number;
-  readonly dailyTweetsLimit?: number;
-  readonly leaseTtlMs?: number;
-}
+export type { AccountRepositoryOptions, ReleaseOptions } from "./types.js";
 
 const DEFAULT_DAILY_REQUESTS_LIMIT = 30;
 const DEFAULT_DAILY_TWEETS_LIMIT = 600;
 const DEFAULT_LEASE_TTL_MS = 120_000;
 
-const ELIGIBILITY_SQL = `status != 0
-  AND (status != 2 OR available_until <= ?)
+const ELIGIBILITY_SQL = `status != ${ACCOUNT_STATUS_CODE.UNUSABLE}
+  AND (status != ${ACCOUNT_STATUS_CODE.COOLING_DOWN} OR available_until <= ?)
   AND (lease_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= ?)
   AND (? = 0 OR (auth_token IS NOT NULL AND auth_token != '' AND csrf_token IS NOT NULL AND csrf_token != ''))
   AND (last_reset_date IS NULL OR last_reset_date <> ? OR (daily_requests < ? AND daily_tweets < ?))`;
@@ -80,7 +68,7 @@ export class AccountRepository implements AccountStateStore {
       JSON.stringify(cookies),
       account.bearerToken ?? existing.bearerToken ?? null,
       account.proxy ? JSON.stringify(account.proxy) : existing.proxy ? JSON.stringify(existing.proxy) : null,
-      account.status ?? existing.status ?? 1,
+      account.status ?? existing.status ?? ACCOUNT_STATUS_CODE.HEALTHY,
       account.availableUntil ?? existing.availableUntil ?? 0,
       account.dailyRequests ?? existing.dailyRequests ?? 0,
       account.dailyTweets ?? existing.dailyTweets ?? 0,
@@ -255,8 +243,14 @@ export class AccountRepository implements AccountStateStore {
   }
 
   public release(leaseId: string, options: ReleaseOptions = {}): boolean {
-    const status = options.status === "unusable" ? 0 : options.status === "cooling_down" ? 2 : 1;
-    const availableUntil = options.availableUntil ?? (status === 1 ? 0 : Date.now());
+    const status =
+      options.status === ACCOUNT_HEALTH.UNUSABLE
+        ? ACCOUNT_STATUS_CODE.UNUSABLE
+        : options.status === ACCOUNT_HEALTH.COOLING_DOWN
+          ? ACCOUNT_STATUS_CODE.COOLING_DOWN
+          : ACCOUNT_STATUS_CODE.HEALTHY;
+    const availableUntil =
+      options.availableUntil ?? (status === ACCOUNT_STATUS_CODE.HEALTHY ? 0 : Date.now());
     return (
       this.database.run(
         "UPDATE accounts SET lease_id=NULL, lease_expires_at=NULL, status=?, available_until=?, last_error_code=?, cooldown_reason=? WHERE lease_id=?",
@@ -270,7 +264,12 @@ export class AccountRepository implements AccountStateStore {
   }
 
   public completeLease(completion: AccountLeaseCompletion): boolean {
-    const status = completion.status === "unusable" ? 0 : completion.status === "cooling_down" ? 2 : 1;
+    const status =
+      completion.status === ACCOUNT_HEALTH.UNUSABLE
+        ? ACCOUNT_STATUS_CODE.UNUSABLE
+        : completion.status === ACCOUNT_HEALTH.COOLING_DOWN
+          ? ACCOUNT_STATUS_CODE.COOLING_DOWN
+          : ACCOUNT_STATUS_CODE.HEALTHY;
     return (
       this.database.run(
         `UPDATE accounts
@@ -394,7 +393,7 @@ export class AccountRepository implements AccountStateStore {
       JSON.stringify(account.cookies),
       account.bearerToken ?? null,
       account.proxy ? JSON.stringify(account.proxy) : null,
-      account.status ?? 1,
+      account.status ?? ACCOUNT_STATUS_CODE.HEALTHY,
       account.availableUntil ?? 0,
       account.dailyRequests ?? 0,
       account.dailyTweets ?? 0,
@@ -415,8 +414,8 @@ export class AccountRepository implements AccountStateStore {
     dailyRequestsLimit = this.dailyRequestsLimit,
     dailyTweetsLimit = this.dailyTweetsLimit,
   ): boolean {
-    if (row.status === 0) return false;
-    if (row.status === 2 && (row.availableUntil ?? 0) > now) return false;
+    if (row.status === ACCOUNT_STATUS_CODE.UNUSABLE) return false;
+    if (row.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (row.availableUntil ?? 0) > now) return false;
     if (!ignoreLease && row.leaseExpiresAt !== undefined && row.leaseExpiresAt > now) return false;
     if (requireAuthMaterial && (!row.authToken || !row.csrfToken)) return false;
     return (row.dailyRequests ?? 0) < dailyRequestsLimit && (row.dailyTweets ?? 0) < dailyTweetsLimit;

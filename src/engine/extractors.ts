@@ -1,24 +1,9 @@
+import { EMPTY_REASON } from "../constants/pages.js";
+import type { FollowPage, TweetPage } from "../domain/pages.js";
 import type { FollowRecord, ProfileRecord, TweetRecord } from "../domain/records.js";
 import { asInteger, asString, isRecord } from "../utils/guards.js";
 
-export interface RequestQuota {
-  readonly remaining?: number;
-  readonly resetAt?: number;
-  readonly exhausted?: boolean;
-}
-
-export interface TweetPage {
-  readonly tweets: readonly TweetRecord[];
-  readonly cursor?: string;
-  readonly quota?: RequestQuota;
-  readonly emptyReason?: "empty" | "malformed";
-}
-
-export interface FollowPage {
-  readonly users: readonly Record<string, unknown>[];
-  readonly cursor?: string;
-  readonly quota?: RequestQuota;
-}
+export type { FollowPage, RequestQuota, TweetPage } from "../domain/pages.js";
 
 export function extractUserResult(payload: unknown): Record<string, unknown> | undefined {
   const root = isRecord(payload) ? payload : {};
@@ -71,10 +56,10 @@ export function mapFollow(
 
 export function extractSearchTweets(payload: unknown): TweetPage {
   const root = isRecord(payload) ? payload : undefined;
-  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: "malformed" };
+  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const data = root.data;
   const search = isRecord(data.search_by_raw_query) ? data.search_by_raw_query : undefined;
-  if (!search) return { tweets: [], emptyReason: "malformed" };
+  if (!search) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const timeline = isRecord(search.search_timeline) ? search.search_timeline : {};
   const nested = isRecord(timeline.timeline) ? timeline.timeline : {};
   return extractTweetsFromInstructions(nested.instructions);
@@ -82,11 +67,11 @@ export function extractSearchTweets(payload: unknown): TweetPage {
 
 export function extractProfileTweets(payload: unknown): TweetPage {
   const root = isRecord(payload) ? payload : undefined;
-  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: "malformed" };
+  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const data = root.data;
   const user = isRecord(data.user) ? data.user : {};
   const result = isRecord(user.result) ? user.result : {};
-  if (!isRecord(result.timeline)) return { tweets: [], emptyReason: "malformed" };
+  if (!isRecord(result.timeline)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const timeline = result.timeline;
   const nested = isRecord(timeline.timeline) ? timeline.timeline : {};
   return extractTweetsFromInstructions(nested.instructions);
@@ -174,7 +159,8 @@ export function normalizeUser(
 }
 
 function extractTweetsFromInstructions(value: unknown): TweetPage {
-  if (value !== undefined && !Array.isArray(value)) return { tweets: [], emptyReason: "malformed" };
+  if (value !== undefined && !Array.isArray(value))
+    return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const instructions = Array.isArray(value) ? value.filter(isRecord) : [];
   const tweets: TweetRecord[] = [];
   let cursor: string | undefined;
@@ -195,7 +181,7 @@ function extractTweetsFromInstructions(value: unknown): TweetPage {
   return {
     tweets,
     ...(cursor ? { cursor } : {}),
-    ...(tweets.length === 0 && !cursor ? { emptyReason: "empty" as const } : {}),
+    ...(tweets.length === 0 && !cursor ? { emptyReason: EMPTY_REASON.EMPTY } : {}),
   };
 }
 

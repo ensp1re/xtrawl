@@ -1,26 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { ClientConfig } from "../config/types.js";
+import { PROGRESS_STATE } from "../constants/collection.js";
 import type { FollowRecord, SearchResult, TweetRecord } from "../domain/records.js";
 import type { FollowsRequest, ProfileTimelineRequest, TargetInput } from "../domain/requests.js";
 import { mapFollow } from "../engine/extractors.js";
-import type { ApiEngine } from "../engine/api-engine.js";
-import type { AccountPool } from "../pool/account-pool.js";
 import { RunFailed } from "../domain/errors.js";
 import { collectionIdentity } from "../query/collection-id.js";
 import { ExecutionRunner } from "../runner/runner.js";
-import type { StorageBundle } from "../storage/index.js";
 import { saveRows } from "../output/writer.js";
 import { targetOutputName } from "../output/names.js";
 import { commitAcceptedPage } from "./page-commit.js";
+import type { CollectionContext, SaveOptions } from "./types.js";
 import { isRecord } from "../utils/guards.js";
 
-export interface CollectionContext {
-  readonly config: ClientConfig;
-  readonly pool: AccountPool;
-  readonly engine: ApiEngine;
-  readonly storage: StorageBundle;
-  readonly signal?: AbortSignal;
-}
+export type { CollectionContext } from "./types.js";
 
 export async function collectProfileTweets(
   context: CollectionContext,
@@ -70,7 +62,7 @@ export async function collectProfileTweets(
     let pages = 0;
     let profileCount = counts.get(collectionId) ?? 0;
     const maxPages = options.maxPagesPerProfile ?? Number.POSITIVE_INFINITY;
-    while (pages < maxPages && !limitReached && saved?.state !== "exhausted") {
+    while (pages < maxPages && !limitReached && saved?.state !== PROGRESS_STATE.EXHAUSTED) {
       pages += 1;
       const inputCursor = cursor;
       const page = await context.pool.execute(
@@ -130,7 +122,7 @@ export async function collectProfileTweets(
       commitAcceptedPage(context.storage, {
         collectionId,
         taskId: collectionId,
-        state: capped ? "capped" : exhausted ? "exhausted" : "active",
+        state: capped ? PROGRESS_STATE.CAPPED : exhausted ? PROGRESS_STATE.EXHAUSTED : PROGRESS_STATE.ACTIVE,
         ...(inputCursor === undefined ? {} : { inputCursor }),
         ...(page.cursor === undefined ? {} : { nextCursor: page.cursor }),
         records: batch,
@@ -191,7 +183,7 @@ export async function collectFollows(
     let pages = 0;
     let targetCount = seen.size;
     const maxPages = options.maxPagesPerProfile ?? Number.POSITIVE_INFINITY;
-    while (pages < maxPages && !limitReached && saved?.state !== "exhausted") {
+    while (pages < maxPages && !limitReached && saved?.state !== PROGRESS_STATE.EXHAUSTED) {
       pages += 1;
       const inputCursor = cursor;
       const page = await context.pool.execute(
@@ -254,7 +246,7 @@ export async function collectFollows(
       commitAcceptedPage(context.storage, {
         collectionId,
         taskId: collectionId,
-        state: capped ? "capped" : exhausted ? "exhausted" : "active",
+        state: capped ? PROGRESS_STATE.CAPPED : exhausted ? PROGRESS_STATE.EXHAUSTED : PROGRESS_STATE.ACTIVE,
         ...(inputCursor === undefined ? {} : { inputCursor }),
         ...(page.cursor === undefined ? {} : { nextCursor: page.cursor }),
         records: batch,
@@ -339,8 +331,6 @@ function withinProfileLimit(limit: number | undefined, count: number): boolean {
 function targetKey(target: TargetInput, resolvedUserId: string): string {
   return target.username ?? target.userId ?? target.profileUrl ?? target.raw ?? resolvedUserId;
 }
-
-type SaveOptions = Pick<ProfileTimelineRequest, "save" | "saveDir" | "saveFormat" | "saveName">;
 
 function isTweetRecord(value: unknown): value is TweetRecord {
   return isRecord(value) && typeof value.tweetId === "string";

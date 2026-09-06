@@ -2,6 +2,7 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { XTrawl } from "../client/client.js";
+import { CLI_COMMAND } from "../constants/cli.js";
 import { redactText } from "../utils/redact.js";
 import { HELP } from "./help.js";
 import { collectionOptionsFromCli, parseArgs, searchRequestFromCli, CliUsageError } from "./parser.js";
@@ -32,23 +33,21 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
           `[xtrawl] accounts=${client.poolSummary.total} eligible=${client.poolSummary.eligible} concurrency=${client.config.concurrency}`,
         );
       let result: unknown;
-      if (args.command === "search")
+      if (args.command === CLI_COMMAND.SEARCH)
         result = await client.search(args.values[0] ?? "", searchRequestFromCli(args));
-      else if (args.command === "tweet") {
+      else if (args.command === CLI_COMMAND.TWEET) {
         const tweets = [];
         for (const value of args.values) tweets.push(await client.getTweet(value));
         result = tweets;
-      } else if (args.command === "user-info")
+      } else if (args.command === CLI_COMMAND.USER_INFO)
         result = await client.getUserInfo(args.values, collectionOptionsFromCli(args));
-      else if (args.command === "profile-tweets")
+      else if (args.command === CLI_COMMAND.PROFILE_TWEETS)
         result = await client.getProfileTweets(args.values, collectionOptionsFromCli(args));
-      else
-        result =
-          args.command === "followers"
-            ? await client.getFollowers(args.values, collectionOptionsFromCli(args))
-            : args.command === "following"
-              ? await client.getFollowing(args.values, collectionOptionsFromCli(args))
-              : await client.getVerifiedFollowers(args.values, collectionOptionsFromCli(args));
+      else if (args.command === CLI_COMMAND.FOLLOWERS)
+        result = await client.getFollowers(args.values, collectionOptionsFromCli(args));
+      else if (args.command === CLI_COMMAND.FOLLOWING)
+        result = await client.getFollowing(args.values, collectionOptionsFromCli(args));
+      else result = await client.getVerifiedFollowers(args.values, collectionOptionsFromCli(args));
       if (pretty) console.log(JSON.stringify(result, null, 2));
       return 0;
     } finally {

@@ -1,5 +1,6 @@
+import { PROGRESS_STATE } from "../constants/collection.js";
+import type { ProgressState } from "../domain/collection.js";
 import type { StorageBundle } from "../storage/index.js";
-import type { ProgressState } from "../storage/progress-repository.js";
 
 export function commitAcceptedPage(
   storage: StorageBundle,
@@ -22,7 +23,8 @@ export function commitAcceptedPage(
     records: input.records,
   });
   if (!input.persistLegacyCheckpoint) return;
-  const cursor = input.state === "capped" ? input.inputCursor : input.nextCursor;
+  const cursor = input.state === PROGRESS_STATE.CAPPED ? input.inputCursor : input.nextCursor;
   if (cursor) storage.checkpoints.save(input.taskId, { root: cursor });
-  else if (input.state === "exhausted" || input.state === "capped") storage.checkpoints.clear(input.taskId);
+  else if (input.state === PROGRESS_STATE.EXHAUSTED || input.state === PROGRESS_STATE.CAPPED)
+    storage.checkpoints.clear(input.taskId);
 }
