@@ -6,7 +6,8 @@ import { ProxyError } from "../domain/errors.js";
 import { prepareAuthMaterial } from "../auth/material.js";
 import { combineSignals, isAbortError } from "../utils/abort.js";
 import { cancelBody, DEFAULT_MAX_RESPONSE_BYTES, readResponseText } from "./body.js";
-import { proxyDispatcher, proxyToUrl } from "./proxy.js";
+import { DispatcherPool } from "./dispatcher-pool.js";
+import { proxyToUrl } from "./proxy.js";
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36";
@@ -23,6 +24,8 @@ export interface SessionBuilderOptions {
 
 export class SessionBuilder {
   private readonly healthyProxies = new Map<string, number>();
+  private readonly preflights = new Map<string, Promise<void>>();
+  private readonly dispatchers = new DispatcherPool();
 
   public constructor(private readonly options: SessionBuilderOptions) {}
 
@@ -43,7 +46,7 @@ export class SessionBuilder {
       });
     return new FetchSession(
       material,
-      proxy,
+      this.dispatchers.acquire(proxy),
       this.options.fetcher ?? undiciFetch,
       this.options.userAgent ?? DEFAULT_USER_AGENT,
     );
@@ -56,8 +59,34 @@ export class SessionBuilder {
     const proxyUrl = proxyToUrl(account.proxy ?? this.options.defaultProxy);
     if (!proxyUrl) return;
     if ((this.healthyProxies.get(proxyUrl) ?? 0) > Date.now() - 60_000) return;
-    const dispatcher = proxyDispatcher(proxyUrl);
-    if (!dispatcher) return;
+    const pending = this.preflights.get(proxyUrl);
+    if (pending) return pending;
+    const work = this.runProxyPreflight(account, proxyUrl, options).finally(() => {
+      this.preflights.delete(proxyUrl);
+    });
+    this.preflights.set(proxyUrl, work);
+    return work;
+  }
+
+  public async close(): Promise<void> {
+    await this.dispatchers.close();
+  }
+
+  public dispatcherCount(): number {
+    return this.dispatchers.size();
+  }
+
+  private async runProxyPreflight(
+    account: AccountRecord,
+    proxyUrl: string,
+    options: { readonly url: string; readonly timeoutMs: number },
+  ): Promise<void> {
+    const acquired = this.dispatchers.acquire(account.proxy ?? this.options.defaultProxy);
+    const dispatcher = acquired.dispatcher;
+    if (!dispatcher) {
+      acquired.release();
+      return;
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
@@ -80,7 +109,7 @@ export class SessionBuilder {
       throw new ProxyError(error instanceof Error ? error.message : String(error), { statusCode: 599 });
     } finally {
       clearTimeout(timeout);
-      await dispatcher.close();
+      acquired.release();
     }
   }
 }
@@ -88,15 +117,17 @@ export class SessionBuilder {
 class FetchSession implements HttpSession {
   public readonly cookies: CookieMap;
   private readonly dispatcher?: Dispatcher;
+  private readonly releaseDispatcher: () => void;
 
   public constructor(
     private readonly material: AuthMaterial,
-    proxy: string | ProxySettings | undefined,
+    acquired: { readonly dispatcher?: Dispatcher; release(): void },
     private readonly fetcher: typeof undiciFetch,
     private readonly userAgent: string,
   ) {
     this.cookies = material.cookies;
-    this.dispatcher = proxyDispatcher(proxy);
+    this.dispatcher = acquired.dispatcher;
+    this.releaseDispatcher = () => acquired.release();
   }
 
   public async get(url: string, options: HttpRequestOptions = {}): Promise<HttpResponse> {
@@ -174,8 +205,7 @@ class FetchSession implements HttpSession {
   }
 
   public async close(): Promise<void> {
-    const close = this.dispatcher && "close" in this.dispatcher ? this.dispatcher.close : undefined;
-    if (typeof close === "function") await close.call(this.dispatcher);
+    this.releaseDispatcher();
   }
 }
 

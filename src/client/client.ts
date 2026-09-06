@@ -50,6 +50,7 @@ export class XTrawl {
   private readonly usesExternalAccountStore: boolean;
   private pool!: AccountPool;
   private engine!: ApiEngine;
+  private sessions?: SessionBuilder;
   private readonly shutdownController = new AbortController();
   private readonly inflight = new Set<Promise<unknown>>();
   private closed = false;
@@ -113,7 +114,7 @@ export class XTrawl {
         this.config.transactionIdEnabled && (!options.sessionFactory || Boolean(options.transactionIdSource)),
       ttlMs: this.config.transactionIdTtlMs,
     });
-    const sessions = new SessionBuilder({
+    this.sessions = new SessionBuilder({
       bearerToken: this.config.bearerToken,
       ...(this.config.proxy ? { defaultProxy: this.config.proxy } : {}),
       ...(this.config.apiUserAgent ? { userAgent: this.config.apiUserAgent } : {}),
@@ -123,7 +124,7 @@ export class XTrawl {
     });
     this.pool = new AccountPool(
       this.accountStore,
-      sessions,
+      this.sessions,
       this.config,
       async (account) => {
         if (!account.authToken) return false;
@@ -263,6 +264,7 @@ export class XTrawl {
   public async shutdown(): Promise<void> {
     this.shutdownController.abort();
     await Promise.allSettled([...this.inflight]);
+    await this.sessions?.close();
     this.close();
   }
 
@@ -270,6 +272,7 @@ export class XTrawl {
     if (this.closed) return;
     this.closed = true;
     if (!this.shutdownController.signal.aborted) this.shutdownController.abort();
+    void this.sessions?.close();
     this.storage.database.close();
   }
 

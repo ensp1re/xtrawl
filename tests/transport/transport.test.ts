@@ -78,6 +78,40 @@ describe("session boundaries", () => {
   });
 });
 
+describe("proxy dispatcher reuse", () => {
+  test("coalesces concurrent first-use proxy preflight checks", async () => {
+    let checks = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const builder = new SessionBuilder({
+      bearerToken: "bearer",
+      defaultProxy: "http://127.0.0.1:9",
+      fetcher: (async () => {
+        checks += 1;
+        await gate;
+        return new Response("ok", { status: 200 });
+      }) as unknown as typeof undiciFetch,
+    });
+    const account = {
+      username: "one",
+      cookies: { auth_token: "a", ct0: "b" },
+      authToken: "a",
+      csrfToken: "b",
+    };
+    const pending = Promise.all([
+      builder.assertProxyHealthy(account, { url: "https://x.com/robots.txt", timeoutMs: 1000 }),
+      builder.assertProxyHealthy(account, { url: "https://x.com/robots.txt", timeoutMs: 1000 }),
+    ]);
+    release();
+    await pending;
+    expect(checks).toBe(1);
+    expect(builder.dispatcherCount()).toBe(1);
+    await builder.close();
+  });
+});
+
 describe("GraphQL transport", () => {
   test("maps remote auth and rate errors", async () => {
     const transport = new GraphqlTransport(new TransactionIdProvider());
