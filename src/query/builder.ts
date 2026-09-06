@@ -1,5 +1,7 @@
 import type { Manifest } from "../domain/manifest.js";
+import { ManifestError } from "../domain/errors.js";
 import type { ProfileTimelineRequest, SearchRequest, TargetInput } from "../domain/requests.js";
+import { assertCredentialDestination } from "../manifest/destinations.js";
 import { buildEffectiveQuery, normalizeSearch } from "./normalize.js";
 
 export const OPERATION = {
@@ -12,11 +14,16 @@ export const OPERATION = {
   tweetResult: "tweet_result",
 } as const;
 
-export function endpointFor(manifest: Manifest, operation: string): string {
+export function endpointFor(
+  manifest: Manifest,
+  operation: string,
+  extraOrigins: readonly string[] = [],
+): string {
   const id = manifest.queryIds[operation];
   const endpoint = manifest.endpoints[operation];
-  if (!id || !endpoint) throw new Error(`Manifest does not define operation ${operation}`);
-  return endpoint.includes("{query_id}") ? endpoint.replace("{query_id}", id) : endpoint;
+  if (!id || !endpoint) throw new ManifestError(`Manifest does not define operation ${operation}`);
+  const url = endpoint.includes("{query_id}") ? endpoint.replace("{query_id}", id) : endpoint;
+  return assertCredentialDestination(url, extraOrigins);
 }
 
 export function buildSearchParams(

@@ -27,7 +27,7 @@ export class ManifestProvider {
       options?: ManifestScrapeOptions,
     ) => Promise<ManifestPayload> = scrapeManifestFromWeb,
   ) {
-    this.local = createManifest(DEFAULT_MANIFEST);
+    this.local = this.manifestFrom(DEFAULT_MANIFEST);
   }
 
   public async getManifest(): Promise<Manifest> {
@@ -58,7 +58,8 @@ export class ManifestProvider {
       this.remoteRefreshAttempted = true;
       try {
         return await this.fetchRemote(url);
-      } catch {
+      } catch (error) {
+        if (error instanceof ManifestError) throw error;
         const stale = this.readCached(url, true);
         if (stale) return stale;
       }
@@ -67,7 +68,8 @@ export class ManifestProvider {
     if (cached) return cached;
     try {
       return await this.fetchRemote(url);
-    } catch {
+    } catch (error) {
+      if (error instanceof ManifestError) throw error;
       return this.readCached(url, true);
     }
   }
@@ -75,8 +77,9 @@ export class ManifestProvider {
   private async fetchRemote(url: string): Promise<Manifest> {
     const remote = await this.remoteFetch(url);
     const payload = normalizePayload(remote);
+    const manifest = this.manifestFrom(payload);
     this.repository.set(url, payload, this.config.manifestTtlMs);
-    return createManifest(payload);
+    return manifest;
   }
 
   private async live(strict: boolean, authToken?: string): Promise<Manifest> {
@@ -98,6 +101,7 @@ export class ManifestProvider {
       const payload = await this.liveScrape(DEFAULT_MANIFEST, {
         ...(token ? { authToken: token } : {}),
       });
+      this.active = this.manifestFrom(payload);
       this.repository.set(
         this.config.manifestUrl ?? LIVE_MANIFEST_CACHE_KEY,
         payload,
@@ -105,7 +109,6 @@ export class ManifestProvider {
       );
       if (this.config.manifestUrl)
         this.repository.set(LIVE_MANIFEST_CACHE_KEY, payload, this.config.manifestTtlMs);
-      this.active = createManifest(payload);
       this.refreshFailedUntil = 0;
       return this.active;
     } catch (error) {
@@ -117,7 +120,16 @@ export class ManifestProvider {
 
   private readCached(key: string, allowExpired = false): Manifest | undefined {
     const payload = this.repository.get(key, allowExpired);
-    return payload ? createManifest(payload) : undefined;
+    if (!payload) return undefined;
+    try {
+      return this.manifestFrom(payload);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private manifestFrom(payload: ManifestPayload): Manifest {
+    return createManifest(payload, { allowedOrigins: this.config.allowedManifestOrigins });
   }
 }
 

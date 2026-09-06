@@ -5,6 +5,7 @@ import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import type { AccountInput, AccountRecord, ProxySettings } from "../domain/accounts.js";
 import type { StorageBundle } from "../storage/index.js";
 import { tokenFingerprint } from "../utils/fingerprint.js";
+import { redactProxy } from "../utils/redact.js";
 
 export interface AccountListOptions {
   readonly eligibleOnly?: boolean;
@@ -161,21 +162,4 @@ export function redactAccount(
 
 function redactCookies(cookies: Readonly<Record<string, string>>): Record<string, string> {
   return Object.fromEntries(Object.keys(cookies).map((name) => [name, "[redacted]"]));
-}
-
-function redactProxy(proxy: string | ProxySettings): string | ProxySettings {
-  if (typeof proxy !== "string")
-    return {
-      ...proxy,
-      ...(proxy.username ? { username: "[redacted]" } : {}),
-      ...(proxy.password ? { password: "[redacted]" } : {}),
-    };
-  try {
-    const value = new URL(proxy.includes("://") ? proxy : `http://${proxy}`);
-    if (value.username) value.username = "[redacted]";
-    if (value.password) value.password = "[redacted]";
-    return value.toString();
-  } catch {
-    return "[redacted]";
-  }
 }

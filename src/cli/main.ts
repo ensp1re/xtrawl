@@ -2,6 +2,7 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { XTrawl } from "../client/client.js";
+import { redactText } from "../utils/redact.js";
 import { HELP } from "./help.js";
 import { collectionOptionsFromCli, parseArgs, searchRequestFromCli, CliUsageError } from "./parser.js";
 
@@ -60,11 +61,13 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2)): P
       return 2;
     }
     console.error(
-      verbose && error instanceof Error
-        ? (error.stack ?? error.message)
-        : error instanceof Error
-          ? error.message
-          : String(error),
+      redactText(
+        verbose && error instanceof Error
+          ? (error.stack ?? error.message)
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      ),
     );
     return 1;
   }

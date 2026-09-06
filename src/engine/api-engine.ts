@@ -143,7 +143,7 @@ export class ApiEngine {
     const send = (manifest: Manifest): Promise<GraphqlResponse> =>
       this.transport.get(
         session,
-        endpointFor(manifest, operation),
+        endpointFor(manifest, operation, this.config.allowedManifestOrigins),
         buildParams(manifest),
         manifest.timeoutSeconds * 1_000,
         signal,

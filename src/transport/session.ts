@@ -134,12 +134,19 @@ class FetchSession implements HttpSession {
         method,
         headers,
         ...(method === "POST" && options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-        redirect: options.redirect ?? "follow",
+        redirect: options.redirect ?? "manual",
         ...(signal ? { signal } : {}),
         ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
       } as Parameters<typeof this.fetcher>[1];
       const response = await this.fetcher(target, init);
       const headersMap = Object.fromEntries(response.headers.entries());
+      if (response.status >= 300 && response.status < 400) {
+        await cancelBody(response);
+        throw new AccountSessionRuntimeError(
+          method === "GET" ? "http_get_failed" : "http_post_failed",
+          "Authenticated redirects are not followed.",
+        );
+      }
       try {
         const text = await readResponseText(response, {
           ...(signal ? { signal } : {}),
@@ -156,7 +163,7 @@ class FetchSession implements HttpSession {
         throw error;
       }
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      if (isAbortError(error) || error instanceof AccountSessionRuntimeError) throw error;
       throw new AccountSessionRuntimeError(
         method === "GET" ? "http_get_failed" : "http_post_failed",
         error instanceof Error ? error.message : String(error),

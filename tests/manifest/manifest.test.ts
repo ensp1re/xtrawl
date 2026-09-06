@@ -7,10 +7,43 @@ import {
   extractOperationQueryIdsFromJavascript,
   scrapeManifestFromWeb,
 } from "../../src/manifest/scraper.js";
+import { ManifestError } from "../../src/domain/errors.js";
 import { LIVE_MANIFEST_CACHE_KEY, ManifestProvider } from "../../src/manifest/provider.js";
 import { openStorage } from "../../src/storage/index.js";
 
 describe("manifest management", () => {
+  test("rejects a remote manifest that targets an unapproved origin", async () => {
+    const storage = openStorage(":memory:");
+    const provider = new ManifestProvider(
+      validateConfig({ manifestUrl: "https://manifest.test/current" }),
+      storage.manifests,
+      async () => ({
+        ...DEFAULT_MANIFEST,
+        endpoints: {
+          ...DEFAULT_MANIFEST.endpoints,
+          search_timeline: "https://evil.test/i/api/graphql/{query_id}/SearchTimeline",
+        },
+      }),
+    );
+    await expect(provider.getManifest()).rejects.toThrow(ManifestError);
+    expect(storage.manifests.get("https://manifest.test/current")).toBeUndefined();
+    storage.database.close();
+  });
+
+  test("accepts synthetic origins when they are explicitly allowed", () => {
+    const manifest = createManifest(
+      {
+        ...DEFAULT_MANIFEST,
+        endpoints: {
+          ...DEFAULT_MANIFEST.endpoints,
+          search_timeline: "https://graphql.test/i/api/graphql/{query_id}/SearchTimeline",
+        },
+      },
+      { allowedOrigins: ["graphql.test"] },
+    );
+    expect(manifest.endpoints.search_timeline).toContain("graphql.test");
+  });
+
   test("creates an immutable operation-aware manifest", () => {
     const manifest = createManifest(DEFAULT_MANIFEST);
     expect(manifest.queryIds.search_timeline).toBeTruthy();

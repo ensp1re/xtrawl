@@ -17,6 +17,9 @@
 - HTTP, HTTPS, and SOCKS5 proxies are normalized and passed to the HTTP adapter. Health checks carry
   no session cookies, and proxy credentials are redacted from inspection and diagnostics.
 - External payloads are parsed as `unknown` and narrowed before use.
+- Remote manifests are untrusted. GraphQL endpoints must be HTTPS on an allowed X origin and a
+  read-only GraphQL path before session cookies, CSRF, or bearer tokens are attached. Authenticated
+  requests do not follow redirects. Tests may add synthetic origins through `allowedManifestOrigins`.
 
 ## Local state
 

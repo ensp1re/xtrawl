@@ -1,5 +1,12 @@
 import { prepareAuthMaterial } from "../../src/auth/material.js";
-import { AccountSessionAuthError, AuthError, NetworkError, RateLimitError } from "../../src/domain/errors.js";
+import {
+  AccountSessionAuthError,
+  AccountSessionRuntimeError,
+  AuthError,
+  NetworkError,
+  RateLimitError,
+} from "../../src/domain/errors.js";
+import { fetch as undiciFetch } from "undici";
 import { GraphqlTransport } from "../../src/transport/graphql.js";
 import { SessionBuilder, cookieHeader } from "../../src/transport/session.js";
 import { TransactionIdProvider } from "../../src/transport/transaction-id.js";
@@ -44,6 +51,30 @@ describe("session boundaries", () => {
     });
     expect(received).toMatchObject({ httpMode: "sync", impersonate: "chrome" });
     expect(proxyToUrl("socks5://user:pass@127.0.0.1:1080")).toBe("socks5://user:pass@127.0.0.1:1080");
+  });
+
+  test("does not follow authenticated redirects", async () => {
+    const builder = new SessionBuilder({
+      bearerToken: "bearer",
+      fetcher: (async () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://evil.test/steal" },
+        })) as unknown as typeof undiciFetch,
+    });
+    const session = builder.fromMaterial({
+      authToken: "a",
+      csrfToken: "b",
+      bearerToken: "bearer",
+      cookies: { auth_token: "a", ct0: "b" },
+    });
+    await expect(session.get("https://x.com/i/api/graphql/id/SearchTimeline")).rejects.toThrow(
+      AccountSessionRuntimeError,
+    );
+    await expect(session.get("https://x.com/i/api/graphql/id/SearchTimeline")).rejects.toThrow(
+      "Authenticated redirects are not followed.",
+    );
+    await session.close();
   });
 });
 

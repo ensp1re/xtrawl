@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { redactUnknown } from "../utils/redact.js";
 import type { StateDatabase } from "./database.js";
 
 export interface RunRecord {
@@ -39,7 +40,7 @@ export class RunRepository {
         "UPDATE runs SET finished_at=?, status=?, error_json=? WHERE id=?",
         new Date().toISOString(),
         status,
-        error ? JSON.stringify(error) : null,
+        error ? JSON.stringify(redactUnknown(error)) : null,
         id,
       ).changes === 1
     );

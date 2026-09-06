@@ -90,7 +90,7 @@ export async function scrapeManifestFromWeb(
   };
   const html = await fetchBoundedText(fetcher, "https://x.com/home", {
     headers: pageHeaders,
-    redirect: "follow",
+    redirect: "error",
   });
   const seen = new Set<string>();
   const scripts: string[] = [];

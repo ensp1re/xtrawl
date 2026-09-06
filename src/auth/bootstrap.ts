@@ -16,11 +16,12 @@ export async function bootstrapCookiesFromAuthToken(
   try {
     const response = await fetcher("https://x.com/home", {
       headers: { Cookie: `auth_token=${authToken}`, "User-Agent": "Mozilla/5.0" },
-      redirect: "follow",
+      redirect: "manual",
       signal: combined,
       ...(dispatcher ? { dispatcher } : {}),
     });
     try {
+      if (response.status >= 300 && response.status < 400) return undefined;
       if (response.status >= 400) return undefined;
       const cookies: Record<string, string> = { auth_token: authToken };
       const setCookies =

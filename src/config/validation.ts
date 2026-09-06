@@ -39,6 +39,7 @@ const CONFIG_KEYS = [
   "proxyCheckTimeoutMs",
   "profileTimelineAllowAnonymous",
   "manifestUrl",
+  "allowedManifestOrigins",
   "manifestTtlMs",
   "manifestUpdateOnInit",
   "manifestScrapeOnInit",
@@ -139,6 +140,9 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
     transactionIdEnabled: asBoolean(merged.transactionIdEnabled),
     strict: asBoolean(merged.strict),
     bearerToken: asString(merged.bearerToken) ?? DEFAULT_CONFIG.bearerToken,
+    allowedManifestOrigins: Array.isArray(merged.allowedManifestOrigins)
+      ? merged.allowedManifestOrigins.map((item) => String(item).trim()).filter(Boolean)
+      : [],
   };
 }
 

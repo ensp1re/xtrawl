@@ -29,6 +29,7 @@ export const DEFAULT_CONFIG: ClientConfig = {
   proxyCheckUrl: "https://x.com/robots.txt",
   proxyCheckTimeoutMs: 10_000,
   profileTimelineAllowAnonymous: false,
+  allowedManifestOrigins: [],
   manifestTtlMs: 3_600_000,
   manifestUpdateOnInit: false,
   manifestScrapeOnInit: false,

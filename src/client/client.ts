@@ -1,7 +1,7 @@
 import type { ClientConfig } from "../config/types.js";
 import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import { validateConfig } from "../config/validation.js";
-import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
+import type { AccountRecord } from "../domain/accounts.js";
 import type { AccountStateStore } from "../domain/account-state.js";
 import type {
   FollowRecord,
@@ -20,6 +20,7 @@ import type {
 } from "../domain/requests.js";
 import { ConfigError } from "../domain/errors.js";
 import { combineSignals } from "../utils/abort.js";
+import { redactProxy } from "../utils/redact.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
@@ -322,22 +323,6 @@ export class XTrawl {
           cookies: { ...account.cookies, ...cookies },
         });
     }
-  }
-}
-
-function redactProxy(proxy: string | ProxySettings): string | ProxySettings {
-  if (typeof proxy !== "string")
-    return {
-      ...proxy,
-      ...(proxy.password ? { password: "[redacted]" } : {}),
-    };
-  try {
-    const value = new URL(proxy.includes("://") ? proxy : `http://${proxy}`);
-    if (value.username) value.username = "[redacted]";
-    if (value.password) value.password = "[redacted]";
-    return value.toString();
-  } catch {
-    return "[redacted]";
   }
 }
 

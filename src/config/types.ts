@@ -34,6 +34,7 @@ export interface ClientConfig {
   readonly proxyCheckTimeoutMs: number;
   readonly profileTimelineAllowAnonymous: boolean;
   readonly manifestUrl?: string;
+  readonly allowedManifestOrigins: readonly string[];
   readonly manifestTtlMs: number;
   readonly manifestUpdateOnInit: boolean;
   readonly manifestScrapeOnInit: boolean;
