@@ -5,6 +5,7 @@ export type SqlRow = Record<string, unknown>;
 export class StateDatabase {
   public readonly path: string;
   private readonly database: DatabaseSync;
+  private readonly statements = new Map<string, StatementSync>();
 
   public constructor(path: string) {
     this.path = path;
@@ -17,23 +18,27 @@ export class StateDatabase {
   }
 
   public prepare(sql: string): StatementSync {
-    return this.database.prepare(sql);
+    const cached = this.statements.get(sql);
+    if (cached) return cached;
+    const statement = this.database.prepare(sql);
+    this.statements.set(sql, statement);
+    return statement;
   }
 
   public run(
     sql: string,
     ...params: SQLInputValue[]
   ): { readonly changes: number; readonly lastInsertRowid: number | bigint } {
-    const result = this.database.prepare(sql).run(...params);
+    const result = this.prepare(sql).run(...params);
     return { changes: Number(result.changes), lastInsertRowid: result.lastInsertRowid };
   }
 
   public get(sql: string, ...params: SQLInputValue[]): SqlRow | undefined {
-    return this.database.prepare(sql).get(...params) as SqlRow | undefined;
+    return this.prepare(sql).get(...params) as SqlRow | undefined;
   }
 
   public all(sql: string, ...params: SQLInputValue[]): SqlRow[] {
-    return this.database.prepare(sql).all(...params) as SqlRow[];
+    return this.prepare(sql).all(...params) as SqlRow[];
   }
 
   public transaction<T>(callback: () => T): T {
