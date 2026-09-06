@@ -11,6 +11,7 @@ import type {
   AccountStateSnapshotRecord,
   AccountStateStore,
 } from "../domain/account-state.js";
+import { ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
 import type { AccountRecord, AccountSummary, ProxySettings } from "../domain/accounts.js";
 import { AccountStateError } from "../domain/errors.js";
 import { summarizeAccounts } from "../pool/account-pool.js";
@@ -49,7 +50,7 @@ export class XTrawlAccounts {
     const now = Date.now();
     return this.cachedAccounts
       .filter((account) => !options.eligibleOnly || isEligible(account, this.config, now))
-      .filter((account) => !options.unusableOnly || account.status === 0)
+      .filter((account) => !options.unusableOnly || account.status === ACCOUNT_STATUS_CODE.UNUSABLE)
       .map((account) => redactAccount(account, options));
   }
 
@@ -89,7 +90,11 @@ export class XTrawlAccounts {
     const account = await this.store.findByUsername(username);
     if (!account?.authToken) return false;
     if (!forceRefresh && account.csrfToken) {
-      await this.store.upsert({ ...account, status: 1, availableUntil: 0 });
+      await this.store.upsert({
+        ...account,
+        status: ACCOUNT_STATUS_CODE.HEALTHY,
+        availableUntil: 0,
+      });
       await this.refresh();
       return true;
     }
@@ -97,7 +102,7 @@ export class XTrawlAccounts {
     if (!cookies?.ct0) return false;
     await this.store.upsert({
       ...account,
-      status: 1,
+      status: ACCOUNT_STATUS_CODE.HEALTHY,
       availableUntil: 0,
       csrfToken: cookies.ct0,
       cookies: { ...account.cookies, ...cookies },
@@ -152,7 +157,9 @@ function toSnapshotRecord(account: AccountRecord): AccountStateSnapshotRecord {
     cookies: account.cookies,
     ...(account.bearerToken ? { bearerToken: account.bearerToken } : {}),
     ...(account.proxy ? { proxy: account.proxy } : {}),
-    ...(account.status === 0 || account.status === 1 || account.status === 2
+    ...(account.status === ACCOUNT_STATUS_CODE.UNUSABLE ||
+    account.status === ACCOUNT_STATUS_CODE.HEALTHY ||
+    account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN
       ? { status: account.status }
       : {}),
     ...copyOperationalState(account),
@@ -183,8 +190,8 @@ function copyOperationalState(
 
 function isEligible(account: AccountRecord, config: ClientConfig, now: number): boolean {
   return (
-    account.status !== 0 &&
-    !(account.status === 2 && (account.availableUntil ?? 0) > now) &&
+    account.status !== ACCOUNT_STATUS_CODE.UNUSABLE &&
+    !(account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (account.availableUntil ?? 0) > now) &&
     Boolean(account.authToken && account.csrfToken) &&
     (account.dailyRequests ?? 0) < config.dailyRequestsLimit &&
     (account.dailyTweets ?? 0) < config.dailyTweetsLimit

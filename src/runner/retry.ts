@@ -1,25 +1,25 @@
 import type { XTrawlError } from "../domain/errors.js";
+import type { RetryOptions } from "../domain/runner.js";
 import { sleep } from "../pool/limiter.js";
+import { isAbortError, throwIfAborted } from "../utils/abort.js";
 
-export interface RetryOptions {
-  readonly maxAttempts: number;
-  readonly baseMs: number;
-  readonly maxMs: number;
-}
+export type { RetryOptions } from "../domain/runner.js";
 
 export async function withRetry<T>(
   operation: (attempt: number) => Promise<T>,
   options: RetryOptions,
   shouldRetry: (error: unknown) => boolean = isRetryable,
+  signal?: AbortSignal,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= options.maxAttempts; attempt += 1) {
+    throwIfAborted(signal);
     try {
       return await operation(attempt);
     } catch (error) {
       lastError = error;
-      if (attempt >= options.maxAttempts || !shouldRetry(error)) throw error;
-      await sleep(Math.min(options.maxMs, options.baseMs * 2 ** (attempt - 1)));
+      if (isAbortError(error) || attempt >= options.maxAttempts || !shouldRetry(error)) throw error;
+      await sleep(Math.min(options.maxMs, options.baseMs * 2 ** (attempt - 1)), signal);
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));

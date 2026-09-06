@@ -1,5 +1,8 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { EngineError } from "../domain/errors.js";
+import { withDestinationLock } from "./lock.js";
 
 export async function writeCsv(
   path: string,
@@ -7,21 +10,39 @@ export async function writeCsv(
   append = false,
 ): Promise<void> {
   if (rows.length === 0) return;
-  const existing = append && (await exists(path)) ? await readFile(path, "utf8") : "";
-  const parsedExisting = existing ? parseCsv(existing) : [];
-  const currentHeaders = parsedExisting[0] ?? [];
-  const headers = mergeHeaders(
-    currentHeaders,
-    rows.flatMap((row) => Object.keys(row)),
-  );
-  const existingRows = parsedExisting
-    .slice(1)
-    .map((values) =>
-      Object.fromEntries(currentHeaders.map((header, index) => [header, values[index] ?? ""])),
-    );
-  const content = renderCsv(headers, [...existingRows, ...rows]);
+  await withDestinationLock(path, async () => {
+    const incomingKeys = rows.flatMap((row) => Object.keys(row));
+    if (append && (await exists(path))) {
+      const existing = await readFile(path, "utf8");
+      const parsedExisting = existing ? parseCsv(existing) : [];
+      const currentHeaders = parsedExisting[0] ?? [];
+      if (currentHeaders.length === 0)
+        throw new EngineError(`Refusing to append to a CSV file without a header: ${path}`);
+      const nextHeaders = mergeHeaders(currentHeaders, incomingKeys);
+      if (!sameHeaders(currentHeaders, nextHeaders))
+        throw new EngineError(
+          `CSV schema changed for ${path}; write a new snapshot instead of appending mixed columns.`,
+        );
+      const body = rows
+        .map((row) => currentHeaders.map((header) => escapeCsv(flattenValue(row[header]))).join(","))
+        .join("\n");
+      await appendFile(path, `${body}\n`, "utf8");
+      return;
+    }
+    const headers = mergeHeaders([], incomingKeys);
+    await atomicWrite(path, renderCsv(headers, rows));
+  });
+}
+
+function sameHeaders(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((header, index) => header === right[index]);
+}
+
+async function atomicWrite(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf8");
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporary, content, "utf8");
+  await rename(temporary, path);
 }
 
 function renderCsv(headers: readonly string[], rows: readonly Record<string, unknown>[]): string {

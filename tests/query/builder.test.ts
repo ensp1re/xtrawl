@@ -22,13 +22,13 @@ const manifest = createManifest({
     tweet_result: "tweet-id",
   },
   endpoints: {
-    search_timeline: "https://x.test/graphql/{query_id}",
-    user_lookup_screen_name: "https://x.test/graphql/{query_id}",
-    profile_timeline: "https://x.test/graphql/{query_id}",
-    followers: "https://x.test/graphql/{query_id}",
-    following: "https://x.test/graphql/{query_id}",
-    verified_followers: "https://x.test/graphql/{query_id}",
-    tweet_result: "https://x.test/graphql/{query_id}",
+    search_timeline: "https://x.com/i/api/graphql/{query_id}/SearchTimeline",
+    user_lookup_screen_name: "https://x.com/i/api/graphql/{query_id}/UserByScreenName",
+    profile_timeline: "https://x.com/i/api/graphql/{query_id}/UserTweets",
+    followers: "https://x.com/i/api/graphql/{query_id}/Followers",
+    following: "https://x.com/i/api/graphql/{query_id}/Following",
+    verified_followers: "https://x.com/i/api/graphql/{query_id}/BlueVerifiedFollowers",
+    tweet_result: "https://x.com/i/api/graphql/{query_id}/TweetResultByRestId",
   },
   features: { shared: true },
   operationFeatures: { followers: { relationship: true } },
@@ -41,7 +41,9 @@ function jsonValue(value: string | undefined): Record<string, unknown> {
 
 describe("typed GraphQL request builders", () => {
   test("resolves operation identifiers and request variables", () => {
-    expect(endpointFor(manifest, OPERATION.search)).toBe("https://x.test/graphql/search-id");
+    expect(endpointFor(manifest, OPERATION.search)).toBe(
+      "https://x.com/i/api/graphql/search-id/SearchTimeline",
+    );
     expect(
       jsonValue(
         buildSearchParams({ searchQuery: "hello", displayType: "Latest" }, manifest, "cursor", 200).variables,

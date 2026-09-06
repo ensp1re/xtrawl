@@ -1,3 +1,5 @@
+import type { FollowType } from "./requests.js";
+
 export interface TweetUser {
   readonly screenName?: string;
   readonly name?: string;
@@ -63,7 +65,7 @@ export interface ProfileRecord {
 }
 
 export interface FollowRecord extends Omit<ProfileRecord, "input"> {
-  readonly type: "followers" | "following" | "verified_followers";
+  readonly type: FollowType;
   readonly target: {
     readonly raw?: string;
     readonly source?: string;

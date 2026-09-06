@@ -1,5 +1,12 @@
 import { prepareAuthMaterial } from "../../src/auth/material.js";
-import { AccountSessionAuthError, AuthError, NetworkError, RateLimitError } from "../../src/domain/errors.js";
+import {
+  AccountSessionAuthError,
+  AccountSessionRuntimeError,
+  AuthError,
+  NetworkError,
+  RateLimitError,
+} from "../../src/domain/errors.js";
+import { fetch as undiciFetch } from "undici";
 import { GraphqlTransport } from "../../src/transport/graphql.js";
 import { SessionBuilder, cookieHeader } from "../../src/transport/session.js";
 import { TransactionIdProvider } from "../../src/transport/transaction-id.js";
@@ -45,6 +52,64 @@ describe("session boundaries", () => {
     expect(received).toMatchObject({ httpMode: "sync", impersonate: "chrome" });
     expect(proxyToUrl("socks5://user:pass@127.0.0.1:1080")).toBe("socks5://user:pass@127.0.0.1:1080");
   });
+
+  test("does not follow authenticated redirects", async () => {
+    const builder = new SessionBuilder({
+      bearerToken: "bearer",
+      fetcher: (async () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://evil.test/steal" },
+        })) as unknown as typeof undiciFetch,
+    });
+    const session = builder.fromMaterial({
+      authToken: "a",
+      csrfToken: "b",
+      bearerToken: "bearer",
+      cookies: { auth_token: "a", ct0: "b" },
+    });
+    await expect(session.get("https://x.com/i/api/graphql/id/SearchTimeline")).rejects.toThrow(
+      AccountSessionRuntimeError,
+    );
+    await expect(session.get("https://x.com/i/api/graphql/id/SearchTimeline")).rejects.toThrow(
+      "Authenticated redirects are not followed.",
+    );
+    await session.close();
+  });
+});
+
+describe("proxy dispatcher reuse", () => {
+  test("coalesces concurrent first-use proxy preflight checks", async () => {
+    let checks = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const builder = new SessionBuilder({
+      bearerToken: "bearer",
+      defaultProxy: "http://127.0.0.1:9",
+      fetcher: (async () => {
+        checks += 1;
+        await gate;
+        return new Response("ok", { status: 200 });
+      }) as unknown as typeof undiciFetch,
+    });
+    const account = {
+      username: "one",
+      cookies: { auth_token: "a", ct0: "b" },
+      authToken: "a",
+      csrfToken: "b",
+    };
+    const pending = Promise.all([
+      builder.assertProxyHealthy(account, { url: "https://x.com/robots.txt", timeoutMs: 1000 }),
+      builder.assertProxyHealthy(account, { url: "https://x.com/robots.txt", timeoutMs: 1000 }),
+    ]);
+    release();
+    await pending;
+    expect(checks).toBe(1);
+    expect(builder.dispatcherCount()).toBe(1);
+    await builder.close();
+  });
 });
 
 describe("GraphQL transport", () => {
@@ -84,13 +149,22 @@ describe("GraphQL transport", () => {
     await expect(transport.get(server, "https://x.test", {}, 1000)).rejects.toThrow(NetworkError);
   });
 
-  test("honors exhausted rate-limit headers on successful HTTP responses", async () => {
+  test("returns a successful quota-exhausted page instead of converting it to 429", async () => {
     const transport = new GraphqlTransport(new TransactionIdProvider());
     const session = sessionFactory(() =>
-      response({ data: {} }, 200, { "x-rate-limit-remaining": "0", "x-rate-limit-reset": "2000000000" }),
+      response({ data: { ok: true } }, 200, {
+        "x-rate-limit-remaining": "0",
+        "x-rate-limit-reset": "2000000000",
+      }),
     )({ cookies: {} });
-    await expect(transport.get(session, "https://x.test", {}, 1000)).rejects.toMatchObject({
-      diagnostics: { statusCode: 429, resetAt: 2_000_000_000_000 },
+    await expect(
+      transport.get(session, "https://x.com/i/api/graphql/id/SearchTimeline", {}, 1000),
+    ).resolves.toMatchObject({
+      status: 200,
+      data: { data: { ok: true } },
+      remaining: 0,
+      resetAt: 2_000_000_000_000,
+      quotaExhausted: true,
     });
   });
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ACCOUNT_HEALTH, ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
 import type { AccountLease, AccountRecord, AccountSummary } from "../domain/accounts.js";
 import type { AccountLeaseCompletion, AccountStateStore } from "../domain/account-state.js";
 import {
@@ -16,20 +17,11 @@ import type { HttpSession } from "../domain/http.js";
 import { computeCooldown } from "./cooldown.js";
 import type { SessionBuilder } from "../transport/session.js";
 import { isRecord } from "../utils/guards.js";
+import { combineSignals, isAbortError, throwIfAborted } from "../utils/abort.js";
+import type { AccountRepair, PoolExecutionContext, PoolExecutionOptions } from "../domain/pool.js";
 import { TokenBucketLimiter, sleep } from "./limiter.js";
 
-export interface PoolExecutionContext {
-  readonly account: AccountLease;
-  readonly session: HttpSession;
-}
-
-export interface PoolExecutionOptions<T> {
-  readonly countTweets?: (value: T) => number;
-  readonly onRetry?: (error: unknown, attempt: number) => void;
-  readonly maxAccountSwitches?: number;
-}
-
-export type AccountRepair = (account: AccountLease) => Promise<boolean>;
+export type { AccountRepair, PoolExecutionContext, PoolExecutionOptions } from "../domain/pool.js";
 
 export class AccountPool {
   private readonly limiters = new Map<string, TokenBucketLimiter>();
@@ -57,6 +49,7 @@ export class AccountPool {
     let lastError: unknown;
     let repairs = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      throwIfAborted(options.signal);
       const now = Date.now();
       const account = await this.repository.acquireLease({
         now,
@@ -76,7 +69,7 @@ export class AccountPool {
       const switchLimit = options.maxAccountSwitches ?? this.config.maxAccountSwitches;
       if (seenAccounts.size > switchLimit + 1) {
         await this.completeLease(account, {
-          status: "healthy",
+          status: ACCOUNT_HEALTH.HEALTHY,
           availableUntil: 0,
           pages: 0,
           tweets: 0,
@@ -87,7 +80,10 @@ export class AccountPool {
       let session: HttpSession | undefined;
       let operationStarted = false;
       let leaseCompleted = false;
-      const heartbeat = this.startHeartbeat(account);
+      let requests = 0;
+      const leaseGuard = new AbortController();
+      const signal = combineSignals(options.signal, leaseGuard.signal);
+      const heartbeat = this.startHeartbeat(account, () => leaseGuard.abort());
       try {
         if (this.config.proxyCheckOnLease)
           await this.sessions.assertProxyHealthy(account, {
@@ -95,13 +91,24 @@ export class AccountPool {
             timeoutMs: this.config.proxyCheckTimeoutMs,
           });
         session = this.sessions.forAccount(account);
-        await this.limiterFor(account).acquire();
+        await this.limiterFor(account).acquire(signal);
         operationStarted = true;
-        const value = await operation({ account, session });
+        const value = await operation({
+          account,
+          session,
+          ...(signal ? { signal } : {}),
+          chargeRequest: () => {
+            requests += 1;
+          },
+        });
+        if (leaseGuard.signal.aborted)
+          throw new AccountStateError("The account lease was lost.", { account: account.username });
+        const quota = readQuota(value);
+        const exhausted = quota?.exhausted === true || quota?.remaining === 0;
         await this.completeLease(account, {
-          status: "healthy",
-          availableUntil: 0,
-          pages: 1,
+          status: exhausted ? ACCOUNT_HEALTH.COOLING_DOWN : ACCOUNT_HEALTH.HEALTHY,
+          availableUntil: exhausted ? (quota?.resetAt ?? Date.now() + this.config.cooldownDefaultMs) : 0,
+          pages: Math.max(requests, 1),
           tweets: Math.max(0, options.countTweets?.(value) ?? countTweets(value)),
         });
         leaseCompleted = true;
@@ -111,7 +118,7 @@ export class AccountPool {
         if (!leaseCompleted)
           await this.completeLease(account, {
             ...this.failureCompletion(error),
-            pages: operationStarted ? 1 : 0,
+            pages: operationStarted ? Math.max(requests, 1) : 0,
             tweets: 0,
           });
         if (error instanceof AuthError && this.repairAccount && repairs < this.config.maxFallbackAttempts) {
@@ -120,7 +127,7 @@ export class AccountPool {
         }
         if (attempt >= maxAttempts || !isRetryable(error)) throw error;
         options.onRetry?.(error, attempt);
-        await sleep(Math.min(this.config.retryMaxMs, this.config.retryBaseMs * 2 ** (attempt - 1)));
+        await sleep(Math.min(this.config.retryMaxMs, this.config.retryBaseMs * 2 ** (attempt - 1)), signal);
       } finally {
         if (heartbeat) clearInterval(heartbeat);
         await session?.close();
@@ -199,14 +206,22 @@ export class AccountPool {
     await this.refreshSummary().catch(() => undefined);
   }
 
-  private startHeartbeat(account: AccountLease): ReturnType<typeof setInterval> | undefined {
+  private startHeartbeat(
+    account: AccountLease,
+    onLost: () => void,
+  ): ReturnType<typeof setInterval> | undefined {
     if (this.config.leaseHeartbeatMs <= 0) return undefined;
     let pending = false;
     const timer = setInterval(() => {
       if (pending) return;
       pending = true;
       void Promise.resolve(this.repository.renewLease(account.leaseId, Date.now() + this.config.leaseTtlMs))
-        .catch(() => false)
+        .then((renewed) => {
+          if (!renewed) onLost();
+        })
+        .catch(() => {
+          onLost();
+        })
         .finally(() => {
           pending = false;
         });
@@ -242,15 +257,16 @@ export function summarizeAccounts(
     total: accounts.length,
     eligible: accounts.filter(
       (account) =>
-        account.status !== 0 &&
-        !(account.status === 2 && (account.availableUntil ?? 0) > now) &&
+        account.status !== ACCOUNT_STATUS_CODE.UNUSABLE &&
+        !(account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (account.availableUntil ?? 0) > now) &&
         Boolean(account.authToken && account.csrfToken) &&
         (account.dailyRequests ?? 0) < config.dailyRequestsLimit &&
         (account.dailyTweets ?? 0) < config.dailyTweetsLimit,
     ).length,
-    unusable: accounts.filter((account) => account.status === 0).length,
-    coolingDown: accounts.filter((account) => account.status === 2 && (account.availableUntil ?? 0) > now)
-      .length,
+    unusable: accounts.filter((account) => account.status === ACCOUNT_STATUS_CODE.UNUSABLE).length,
+    coolingDown: accounts.filter(
+      (account) => account.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (account.availableUntil ?? 0) > now,
+    ).length,
   };
 }
 
@@ -266,7 +282,23 @@ function countTweets(value: unknown): number {
   return 0;
 }
 
+function readQuota(
+  value: unknown,
+): { readonly remaining?: number; readonly resetAt?: number; readonly exhausted?: boolean } | undefined {
+  if (!isRecord(value) || !isRecord(value.quota)) return undefined;
+  const remaining = typeof value.quota.remaining === "number" ? value.quota.remaining : undefined;
+  const resetAt = typeof value.quota.resetAt === "number" ? value.quota.resetAt : undefined;
+  const exhausted = value.quota.exhausted === true;
+  return {
+    ...(remaining === undefined ? {} : { remaining }),
+    ...(resetAt === undefined ? {} : { resetAt }),
+    ...(exhausted ? { exhausted: true } : {}),
+  };
+}
+
 function isRetryable(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  if (error instanceof NetworkError && error.diagnostics.statusCode === 499) return false;
   if (error instanceof AuthError || error instanceof RateLimitError || error instanceof NetworkError)
     return true;
   if (error instanceof ProxyError || error instanceof AccountSessionBuildError) return true;

@@ -1,11 +1,9 @@
+import { ACCOUNT_HEALTH } from "../constants/accounts.js";
+import { ERROR_CATEGORY } from "../constants/errors.js";
 import type { ErrorCategory } from "../domain/errors.js";
+import type { CooldownDecision } from "../domain/pool.js";
 
-export interface CooldownDecision {
-  readonly status: "healthy" | "cooling_down" | "unusable";
-  readonly availableUntil: number;
-  readonly lastErrorCode?: number;
-  readonly reason?: string;
-}
+export type { CooldownDecision } from "../domain/pool.js";
 
 export function parseRateLimitReset(headers: Readonly<Record<string, string>>): number | undefined {
   const raw = headers["x-rate-limit-reset"] ?? headers["X-Rate-Limit-Reset"];
@@ -21,9 +19,9 @@ export function parseRateLimitRemaining(headers: Readonly<Record<string, string>
   return Number.isFinite(value) ? value : undefined;
 }
 
-export function effectiveStatus(status: number, headers: Readonly<Record<string, string>>): number {
+export function isQuotaExhausted(headers: Readonly<Record<string, string>>): boolean {
   const remaining = parseRateLimitRemaining(headers);
-  return status === 200 && remaining !== undefined && remaining <= 0 ? 429 : status;
+  return remaining !== undefined && remaining <= 0;
 }
 
 export function computeCooldown(
@@ -38,18 +36,20 @@ export function computeCooldown(
     readonly jitterMs?: number;
   },
 ): CooldownDecision {
-  if (status === 200) return { status: "healthy", availableUntil: 0 };
-  if (category === "auth" || status === 401 || status === 403)
+  if (status === 200) return { status: ACCOUNT_HEALTH.HEALTHY, availableUntil: 0 };
+  if (category === ERROR_CATEGORY.AUTH || status === 401 || status === 403)
     return {
-      status: "unusable",
+      status: ACCOUNT_HEALTH.UNUSABLE,
       availableUntil: now + options.authMs,
       lastErrorCode: status,
       reason: "authentication_failed",
     };
-  const reset = options.resetAt ?? now + (category === "transient" ? options.transientMs : options.defaultMs);
+  const reset =
+    options.resetAt ??
+    now + (category === ERROR_CATEGORY.TRANSIENT ? options.transientMs : options.defaultMs);
   const jitter = Math.round(Math.random() * Math.max(0, options.jitterMs ?? 0));
   return {
-    status: "cooling_down",
+    status: ACCOUNT_HEALTH.COOLING_DOWN,
     availableUntil: reset + jitter,
     lastErrorCode: status,
     reason: category ?? "remote_error",

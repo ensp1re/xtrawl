@@ -1,10 +1,12 @@
+import { API_HTTP_MODE } from "../constants/config.js";
+import { PROXY_SCHEME } from "../constants/accounts.js";
 import { ConfigError } from "../domain/errors.js";
 import type { ProxySettings } from "../domain/accounts.js";
 import { asBoolean, asInteger, asString, isRecord } from "../utils/guards.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 import type { ClientConfig, ConfigInput } from "./types.js";
 
-export type ApiHttpMode = "auto" | "async" | "sync";
+export type { ApiHttpMode } from "./types.js";
 
 const CONFIG_KEYS = [
   "dbPath",
@@ -39,6 +41,7 @@ const CONFIG_KEYS = [
   "proxyCheckTimeoutMs",
   "profileTimelineAllowAnonymous",
   "manifestUrl",
+  "allowedManifestOrigins",
   "manifestTtlMs",
   "manifestUpdateOnInit",
   "manifestScrapeOnInit",
@@ -68,7 +71,9 @@ export function normalizeProxyPayload(value: unknown): string | ProxySettings | 
     ...(asString(value.https) ? { https: asString(value.https) } : {}),
     ...(asString(value.host) ? { host: asString(value.host) } : {}),
     ...(asInteger(value.port) > 0 ? { port: asInteger(value.port) } : {}),
-    ...(value.scheme === "http" || value.scheme === "https" || value.scheme === "socks5"
+    ...(value.scheme === PROXY_SCHEME.HTTP ||
+    value.scheme === PROXY_SCHEME.HTTPS ||
+    value.scheme === PROXY_SCHEME.SOCKS5
       ? { scheme: value.scheme }
       : {}),
     ...(asString(value.username) ? { username: asString(value.username) } : {}),
@@ -81,7 +86,7 @@ export function normalizeProxyPayload(value: unknown): string | ProxySettings | 
 export function validateConfig(input: ConfigInput = {}): ClientConfig {
   const merged = { ...DEFAULT_CONFIG, ...configOverrides(input) };
   const mode = merged.apiHttpMode ?? DEFAULT_CONFIG.apiHttpMode;
-  if (mode !== "auto" && mode !== "async" && mode !== "sync") {
+  if (mode !== API_HTTP_MODE.AUTO && mode !== API_HTTP_MODE.ASYNC && mode !== API_HTTP_MODE.SYNC) {
     throw new ConfigError(`Unsupported HTTP mode: ${String(mode)}`);
   }
   const proxy = normalizeProxyPayload(merged.proxy);
@@ -119,17 +124,23 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
   } catch {
     throw new ConfigError("proxyCheckUrl must be an HTTP(S) URL");
   }
-  if (
-    merged.minDelayMs < 0 ||
-    merged.leaseHeartbeatMs < 0 ||
-    merged.cooldownDefaultMs < 0 ||
-    merged.transientCooldownMs < 0 ||
-    merged.authCooldownMs < 0 ||
-    merged.cooldownJitterMs < 0 ||
-    merged.retryBaseMs < 0 ||
-    merged.retryMaxMs < 0
-  ) {
-    throw new ConfigError("delay and cooldown values cannot be negative");
+  const delayFields: Array<keyof ClientConfig> = [
+    "minDelayMs",
+    "leaseHeartbeatMs",
+    "cooldownDefaultMs",
+    "transientCooldownMs",
+    "authCooldownMs",
+    "cooldownJitterMs",
+    "retryBaseMs",
+    "retryMaxMs",
+  ];
+  for (const field of delayFields) {
+    const value = Number(merged[field]);
+    if (!Number.isFinite(value) || value < 0)
+      throw new ConfigError("delay and cooldown values cannot be negative");
+  }
+  if (merged.leaseHeartbeatMs > 0 && merged.leaseHeartbeatMs * 2 >= merged.leaseTtlMs) {
+    throw new ConfigError("leaseHeartbeatMs must leave a margin below leaseTtlMs");
   }
   return {
     ...merged,
@@ -139,6 +150,9 @@ export function validateConfig(input: ConfigInput = {}): ClientConfig {
     transactionIdEnabled: asBoolean(merged.transactionIdEnabled),
     strict: asBoolean(merged.strict),
     bearerToken: asString(merged.bearerToken) ?? DEFAULT_CONFIG.bearerToken,
+    allowedManifestOrigins: Array.isArray(merged.allowedManifestOrigins)
+      ? merged.allowedManifestOrigins.map((item) => String(item).trim()).filter(Boolean)
+      : [],
   };
 }
 

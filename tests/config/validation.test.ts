@@ -27,6 +27,10 @@ describe("configuration validation", () => {
     expect(() => validateConfig({ concurrency: 0 })).toThrow(ConfigError);
     expect(() => validateConfig({ apiPageSize: 101 })).toThrow(ConfigError);
     expect(() => validateConfig({ cooldownDefaultMs: -1 })).toThrow(ConfigError);
+    expect(() => validateConfig({ minDelayMs: Number.POSITIVE_INFINITY })).toThrow(ConfigError);
+    expect(() => validateConfig({ leaseHeartbeatMs: 100_000, leaseTtlMs: 120_000 })).toThrow(
+      "leaseHeartbeatMs",
+    );
   });
 
   test("retains strict boolean coercion and caller limits", () => {

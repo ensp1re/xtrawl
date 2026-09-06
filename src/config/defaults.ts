@@ -1,11 +1,13 @@
+import { API_HTTP_MODE } from "../constants/config.js";
+import { SAVE_FORMAT } from "../constants/output.js";
 import type { ClientConfig } from "./types.js";
 
 export const DEFAULT_CONFIG: ClientConfig = {
   dbPath: "xtrawl_state.db",
   concurrency: 5,
   saveDir: "outputs",
-  saveFormat: "csv",
-  apiHttpMode: "auto",
+  saveFormat: SAVE_FORMAT.CSV,
+  apiHttpMode: API_HTTP_MODE.AUTO,
   dailyRequestsLimit: 30,
   dailyTweetsLimit: 600,
   maxEmptyPages: 1,
@@ -29,6 +31,7 @@ export const DEFAULT_CONFIG: ClientConfig = {
   proxyCheckUrl: "https://x.com/robots.txt",
   proxyCheckTimeoutMs: 10_000,
   profileTimelineAllowAnonymous: false,
+  allowedManifestOrigins: [],
   manifestTtlMs: 3_600_000,
   manifestUpdateOnInit: false,
   manifestScrapeOnInit: false,

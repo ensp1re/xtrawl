@@ -6,34 +6,29 @@ import type {
   CookieMap,
   ProxySettings,
 } from "../domain/accounts.js";
-import type { AccountStatus } from "../domain/accounts.js";
+import { ACCOUNT_HEALTH, ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
+import type { AccountRepositoryOptions, ReleaseOptions } from "./types.js";
 import type {
   AccountLeaseCompletion,
   AccountLeaseRequest,
   AccountStateStore,
 } from "../domain/account-state.js";
+import { asInteger } from "../utils/guards.js";
 import { StateDatabase } from "./database.js";
 import { rowToAccount } from "./account-row.js";
 
 export { rowToAccount } from "./account-row.js";
-
-export interface ReleaseOptions {
-  readonly status?: AccountStatus;
-  readonly availableUntil?: number;
-  readonly lastErrorCode?: number;
-  readonly cooldownReason?: string;
-  readonly dailyRequests?: number;
-}
-
-export interface AccountRepositoryOptions {
-  readonly dailyRequestsLimit?: number;
-  readonly dailyTweetsLimit?: number;
-  readonly leaseTtlMs?: number;
-}
+export type { AccountRepositoryOptions, ReleaseOptions } from "./types.js";
 
 const DEFAULT_DAILY_REQUESTS_LIMIT = 30;
 const DEFAULT_DAILY_TWEETS_LIMIT = 600;
 const DEFAULT_LEASE_TTL_MS = 120_000;
+
+const ELIGIBILITY_SQL = `status != ${ACCOUNT_STATUS_CODE.UNUSABLE}
+  AND (status != ${ACCOUNT_STATUS_CODE.COOLING_DOWN} OR available_until <= ?)
+  AND (lease_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= ?)
+  AND (? = 0 OR (auth_token IS NOT NULL AND auth_token != '' AND csrf_token IS NOT NULL AND csrf_token != ''))
+  AND (last_reset_date IS NULL OR last_reset_date <> ? OR (daily_requests < ? AND daily_tweets < ?))`;
 
 export class AccountRepository implements AccountStateStore {
   public readonly kind = "sqlite";
@@ -73,7 +68,7 @@ export class AccountRepository implements AccountStateStore {
       JSON.stringify(cookies),
       account.bearerToken ?? existing.bearerToken ?? null,
       account.proxy ? JSON.stringify(account.proxy) : existing.proxy ? JSON.stringify(existing.proxy) : null,
-      account.status ?? existing.status ?? 1,
+      account.status ?? existing.status ?? ACCOUNT_STATUS_CODE.HEALTHY,
       account.availableUntil ?? existing.availableUntil ?? 0,
       account.dailyRequests ?? existing.dailyRequests ?? 0,
       account.dailyTweets ?? existing.dailyTweets ?? 0,
@@ -124,13 +119,28 @@ export class AccountRepository implements AccountStateStore {
 
   public summary(): AccountSummary {
     const now = Date.now();
-    const rows = this.list();
+    const today = utcDate(now);
+    const row = this.database.get(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN status=0 THEN 1 ELSE 0 END) AS unusable,
+         SUM(CASE WHEN status=2 AND available_until>? THEN 1 ELSE 0 END) AS cooling,
+         SUM(CASE WHEN status!=0 AND (status!=2 OR available_until<=?)
+              AND (last_reset_date IS NULL OR last_reset_date<>? OR (daily_requests<? AND daily_tweets<?))
+              THEN 1 ELSE 0 END) AS eligible
+       FROM accounts`,
+      now,
+      now,
+      today,
+      this.dailyRequestsLimit,
+      this.dailyTweetsLimit,
+    );
     return {
       dbPath: this.database.path,
-      total: rows.length,
-      eligible: rows.filter((row) => this.isEligible(row, now, true)).length,
-      unusable: rows.filter((row) => row.status === 0).length,
-      coolingDown: rows.filter((row) => row.status === 2 && (row.availableUntil ?? 0) > now).length,
+      total: Number(row?.total ?? 0),
+      eligible: Number(row?.eligible ?? 0),
+      unusable: Number(row?.unusable ?? 0),
+      coolingDown: Number(row?.cooling ?? 0),
     };
   }
 
@@ -155,30 +165,45 @@ export class AccountRepository implements AccountStateStore {
 
   public acquireLease(request: AccountLeaseRequest): AccountLease | undefined {
     return this.database.transaction(() => {
-      this.resetExpiredCooldowns(request.now);
-      this.resetDailyCounters(request.utcDate);
-      const candidates = this.list().filter((row) =>
-        this.isEligible(
-          row,
-          request.now,
-          false,
-          request.requireAuthMaterial,
-          request.dailyRequestsLimit,
-          request.dailyTweetsLimit,
-        ),
+      const selected = this.database.get(
+        `SELECT id, username FROM accounts
+         WHERE ${ELIGIBILITY_SQL}
+         ORDER BY last_used ASC, id ASC
+         LIMIT 1`,
+        request.now,
+        request.now,
+        request.requireAuthMaterial ? 1 : 0,
+        request.utcDate,
+        request.dailyRequestsLimit,
+        request.dailyTweetsLimit,
       );
-      const selected = candidates.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0))[0];
-      if (!selected?.id) return undefined;
+      if (!selected) return undefined;
+      const selectedId = asInteger(selected.id);
+      if (!selectedId) return undefined;
       const changed = this.database.run(
-        "UPDATE accounts SET lease_id=?, lease_expires_at=?, last_used=? WHERE id=? AND (lease_id IS NULL OR lease_expires_at<?)",
+        `UPDATE accounts
+         SET lease_id=?, lease_expires_at=?, last_used=?,
+             daily_requests=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_requests END,
+             daily_tweets=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_tweets END,
+             last_reset_date=?,
+             status=CASE WHEN status=2 AND available_until<=? THEN 1 ELSE status END,
+             available_until=CASE WHEN status=2 AND available_until<=? THEN 0 ELSE available_until END,
+             cooldown_reason=CASE WHEN status=2 AND available_until<=? THEN NULL ELSE cooldown_reason END
+         WHERE id=? AND (lease_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=?)`,
         request.leaseId,
         request.leaseExpiresAt,
         request.now,
-        selected.id,
+        request.utcDate,
+        request.utcDate,
+        request.utcDate,
+        request.now,
+        request.now,
+        request.now,
+        selectedId,
         request.now,
       ).changes;
       if (changed !== 1) return undefined;
-      const current = this.findByUsername(selected.username);
+      const current = this.findByUsername(String(selected.username));
       return current
         ? { ...current, leaseId: request.leaseId, leaseExpiresAt: request.leaseExpiresAt }
         : undefined;
@@ -197,22 +222,35 @@ export class AccountRepository implements AccountStateStore {
   }
 
   public recordUsage(leaseId: string, pages = 1, tweets = 0): boolean {
-    this.resetDailyCounters();
+    const today = utcDate();
     return (
       this.database.run(
-        "UPDATE accounts SET daily_requests=daily_requests+?, daily_tweets=daily_tweets+?, total_tweets=total_tweets+?, last_used=? WHERE lease_id=?",
+        `UPDATE accounts SET
+           daily_requests=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_requests END+?,
+           daily_tweets=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_tweets END+?,
+           total_tweets=total_tweets+?, last_used=?, last_reset_date=?
+         WHERE lease_id=?`,
+        today,
         pages,
+        today,
         tweets,
         tweets,
         Date.now(),
+        today,
         leaseId,
       ).changes === 1
     );
   }
 
   public release(leaseId: string, options: ReleaseOptions = {}): boolean {
-    const status = options.status === "unusable" ? 0 : options.status === "cooling_down" ? 2 : 1;
-    const availableUntil = options.availableUntil ?? (status === 1 ? 0 : Date.now());
+    const status =
+      options.status === ACCOUNT_HEALTH.UNUSABLE
+        ? ACCOUNT_STATUS_CODE.UNUSABLE
+        : options.status === ACCOUNT_HEALTH.COOLING_DOWN
+          ? ACCOUNT_STATUS_CODE.COOLING_DOWN
+          : ACCOUNT_STATUS_CODE.HEALTHY;
+    const availableUntil =
+      options.availableUntil ?? (status === ACCOUNT_STATUS_CODE.HEALTHY ? 0 : Date.now());
     return (
       this.database.run(
         "UPDATE accounts SET lease_id=NULL, lease_expires_at=NULL, status=?, available_until=?, last_error_code=?, cooldown_reason=? WHERE lease_id=?",
@@ -226,28 +264,34 @@ export class AccountRepository implements AccountStateStore {
   }
 
   public completeLease(completion: AccountLeaseCompletion): boolean {
-    return this.database.transaction(() => {
-      this.resetDailyCounters(completion.utcDate);
-      const status = completion.status === "unusable" ? 0 : completion.status === "cooling_down" ? 2 : 1;
-      return (
-        this.database.run(
-          `UPDATE accounts
-           SET lease_id=NULL, lease_expires_at=NULL, status=?, available_until=?,
-               daily_requests=daily_requests+?, daily_tweets=daily_tweets+?,
-               total_tweets=total_tweets+?, last_used=?, last_error_code=?, cooldown_reason=?
-           WHERE lease_id=?`,
-          status,
-          completion.availableUntil,
-          Math.max(0, completion.pages),
-          Math.max(0, completion.tweets),
-          Math.max(0, completion.tweets),
-          completion.now,
-          completion.lastErrorCode ?? null,
-          completion.cooldownReason ?? null,
-          completion.leaseId,
-        ).changes === 1
-      );
-    });
+    const status =
+      completion.status === ACCOUNT_HEALTH.UNUSABLE
+        ? ACCOUNT_STATUS_CODE.UNUSABLE
+        : completion.status === ACCOUNT_HEALTH.COOLING_DOWN
+          ? ACCOUNT_STATUS_CODE.COOLING_DOWN
+          : ACCOUNT_STATUS_CODE.HEALTHY;
+    return (
+      this.database.run(
+        `UPDATE accounts
+         SET lease_id=NULL, lease_expires_at=NULL, status=?, available_until=?,
+             daily_requests=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_requests END+?,
+             daily_tweets=CASE WHEN last_reset_date IS NULL OR last_reset_date<>? THEN 0 ELSE daily_tweets END+?,
+             total_tweets=total_tweets+?, last_used=?, last_error_code=?, cooldown_reason=?, last_reset_date=?
+         WHERE lease_id=?`,
+        status,
+        completion.availableUntil,
+        completion.utcDate,
+        Math.max(0, completion.pages),
+        completion.utcDate,
+        Math.max(0, completion.tweets),
+        Math.max(0, completion.tweets),
+        completion.now,
+        completion.lastErrorCode ?? null,
+        completion.cooldownReason ?? null,
+        completion.utcDate,
+        completion.leaseId,
+      ).changes === 1
+    );
   }
 
   public markUnusable(username: string, code: number, reason: string): boolean {
@@ -349,7 +393,7 @@ export class AccountRepository implements AccountStateStore {
       JSON.stringify(account.cookies),
       account.bearerToken ?? null,
       account.proxy ? JSON.stringify(account.proxy) : null,
-      account.status ?? 1,
+      account.status ?? ACCOUNT_STATUS_CODE.HEALTHY,
       account.availableUntil ?? 0,
       account.dailyRequests ?? 0,
       account.dailyTweets ?? 0,
@@ -362,21 +406,6 @@ export class AccountRepository implements AccountStateStore {
     return this.findByUsername(account.username) as AccountRecord;
   }
 
-  private resetExpiredCooldowns(now: number): void {
-    this.database.run(
-      "UPDATE accounts SET status=1, available_until=0, cooldown_reason=NULL WHERE status=2 AND available_until<=?",
-      now,
-    );
-  }
-
-  private resetDailyCounters(today = utcDate()): void {
-    this.database.run(
-      "UPDATE accounts SET daily_requests=0, daily_tweets=0, last_reset_date=? WHERE last_reset_date IS NULL OR last_reset_date<>?",
-      today,
-      today,
-    );
-  }
-
   private isEligible(
     row: AccountRecord,
     now: number,
@@ -385,8 +414,8 @@ export class AccountRepository implements AccountStateStore {
     dailyRequestsLimit = this.dailyRequestsLimit,
     dailyTweetsLimit = this.dailyTweetsLimit,
   ): boolean {
-    if (row.status === 0) return false;
-    if (row.status === 2 && (row.availableUntil ?? 0) > now) return false;
+    if (row.status === ACCOUNT_STATUS_CODE.UNUSABLE) return false;
+    if (row.status === ACCOUNT_STATUS_CODE.COOLING_DOWN && (row.availableUntil ?? 0) > now) return false;
     if (!ignoreLease && row.leaseExpiresAt !== undefined && row.leaseExpiresAt > now) return false;
     if (requireAuthMaterial && (!row.authToken || !row.csrfToken)) return false;
     return (row.dailyRequests ?? 0) < dailyRequestsLimit && (row.dailyTweets ?? 0) < dailyTweetsLimit;

@@ -1,7 +1,7 @@
 import type { ClientConfig } from "../config/types.js";
 import { loadAccountFromEnvironmentSync } from "../config/environment.js";
 import { validateConfig } from "../config/validation.js";
-import type { AccountRecord, ProxySettings } from "../domain/accounts.js";
+import type { AccountRecord } from "../domain/accounts.js";
 import type { AccountStateStore } from "../domain/account-state.js";
 import type {
   FollowRecord,
@@ -18,7 +18,14 @@ import type {
   TargetInput,
   UserInfoRequest,
 } from "../domain/requests.js";
+import { ACCOUNT_STATUS_CODE } from "../constants/accounts.js";
+import { CLI_COMMAND } from "../constants/cli.js";
+import { FOLLOW_TYPE } from "../constants/requests.js";
 import { ConfigError } from "../domain/errors.js";
+import type { DiagnosticEvent, DiagnosticListener } from "../domain/diagnostics.js";
+import { combineSignals } from "../utils/abort.js";
+import { redactProxy } from "../utils/redact.js";
+import { tokenFingerprint } from "../utils/fingerprint.js";
 import { ApiEngine } from "../engine/api-engine.js";
 import { loadAccountsFileSync, loadInlineAccounts } from "../auth/loaders.js";
 import { accountInputToRecord } from "../auth/records.js";
@@ -30,10 +37,10 @@ import { GraphqlTransport } from "../transport/graphql.js";
 import { SessionBuilder } from "../transport/session.js";
 import { TransactionIdProvider } from "../transport/transaction-id.js";
 import { normalizeTargets } from "../query/targets.js";
-import { collectFollows, collectProfileTweets, type CollectionContext } from "./collectors.js";
+import { collectFollows, collectProfileTweets } from "./collectors.js";
 import { collectSearch, collectSearchPage } from "./search.js";
 import { collectProfiles } from "./profiles.js";
-import type { ClientInspection, ClientOptions } from "./types.js";
+import type { ClientInspection, ClientOptions, CollectionContext } from "./types.js";
 import { XTrawlDatabase } from "./database.js";
 import { XTrawlAccounts } from "./accounts.js";
 
@@ -48,6 +55,11 @@ export class XTrawl {
   private readonly usesExternalAccountStore: boolean;
   private pool!: AccountPool;
   private engine!: ApiEngine;
+  private sessions?: SessionBuilder;
+  private readonly shutdownController = new AbortController();
+  private readonly inflight = new Set<Promise<unknown>>();
+  private closed = false;
+  private readonly onDiagnostic?: DiagnosticListener;
 
   public constructor(options?: ClientOptions);
   public constructor(options: ClientOptions, initialization: typeof ASYNC_ACCOUNT_STORE_INITIALIZATION);
@@ -58,6 +70,7 @@ export class XTrawl {
     if (options.accountStore && initialization !== ASYNC_ACCOUNT_STORE_INITIALIZATION)
       throw new ConfigError("Custom accountStore instances require await XTrawl.create(options).");
     this.config = validateConfig(options);
+    this.onDiagnostic = options.onDiagnostic;
     this.storage = openStorage(this.config.dbPath, {
       dailyRequestsLimit: this.config.dailyRequestsLimit,
       dailyTweetsLimit: this.config.dailyTweetsLimit,
@@ -108,7 +121,7 @@ export class XTrawl {
         this.config.transactionIdEnabled && (!options.sessionFactory || Boolean(options.transactionIdSource)),
       ttlMs: this.config.transactionIdTtlMs,
     });
-    const sessions = new SessionBuilder({
+    this.sessions = new SessionBuilder({
       bearerToken: this.config.bearerToken,
       ...(this.config.proxy ? { defaultProxy: this.config.proxy } : {}),
       ...(this.config.apiUserAgent ? { userAgent: this.config.apiUserAgent } : {}),
@@ -118,7 +131,7 @@ export class XTrawl {
     });
     this.pool = new AccountPool(
       this.accountStore,
-      sessions,
+      this.sessions,
       this.config,
       async (account) => {
         if (!account.authToken) return false;
@@ -126,7 +139,7 @@ export class XTrawl {
         if (!cookies?.ct0) return false;
         await this.accountStore.upsert({
           ...account,
-          status: 1,
+          status: ACCOUNT_STATUS_CODE.HEALTHY,
           availableUntil: 0,
           csrfToken: cookies.ct0,
           cookies: { ...account.cookies, ...cookies },
@@ -141,11 +154,29 @@ export class XTrawl {
   }
 
   public async search(query = "", options: SearchRequest = {}): Promise<SearchResult> {
-    return collectSearch(this.collectionContext(), query, options);
+    return this.track(
+      collectSearch(this.collectionContext(options.signal), query, options),
+      CLI_COMMAND.SEARCH,
+    );
   }
 
   public async searchPage(query = "", options: SearchPageRequest = {}): Promise<SearchPageResult> {
-    return collectSearchPage(this.collectionContext(), query, options);
+    return this.track(
+      collectSearchPage(this.collectionContext(options.signal), query, options),
+      "searchPage",
+    );
+  }
+
+  public async *searchPages(
+    query = "",
+    options: SearchPageRequest = {},
+  ): AsyncGenerator<SearchPageResult, void, void> {
+    let cursor = options.cursor;
+    do {
+      const page = await this.searchPage(query, { ...options, ...(cursor === undefined ? {} : { cursor }) });
+      yield page;
+      cursor = page.nextCursor;
+    } while (cursor);
   }
 
   public async getUserInfo(
@@ -153,20 +184,42 @@ export class XTrawl {
     options: UserInfoRequest = {},
   ): Promise<readonly ProfileRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectProfiles(this.collectionContext(), normalized, options);
+    return this.track(
+      collectProfiles(this.collectionContext(options.signal), normalized, options),
+      CLI_COMMAND.USER_INFO,
+    );
   }
 
-  public async getTweet(target: string): Promise<TweetRecord | undefined> {
+  public async getTweet(
+    target: string,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<TweetRecord | undefined> {
     const tweetId = tweetIdFromTarget(target);
     if (!tweetId) throw new ConfigError("Tweet lookup requires a numeric tweet ID or status URL.");
-    return this.pool.execute("tweet", ({ session }) => this.engine.tweetResult(session, tweetId));
+    const signal = this.operationSignal(options.signal);
+    return this.track(
+      this.pool.execute(
+        "tweet",
+        ({ session, signal: leaseSignal, chargeRequest }) =>
+          this.engine.tweetResult(session, tweetId, leaseSignal ?? signal, chargeRequest),
+        signal ? { signal } : {},
+      ),
+      CLI_COMMAND.TWEET,
+    );
   }
 
   public async getProfileTweets(
     targets: readonly (string | TargetInput)[],
     options: Omit<ProfileTimelineRequest, "targets"> = {},
   ): Promise<SearchResult> {
-    return collectProfileTweets(this.collectionContext(), normalizeTargets(targets).targets, options);
+    return this.track(
+      collectProfileTweets(
+        this.collectionContext(options.signal),
+        normalizeTargets(targets).targets,
+        options,
+      ),
+      CLI_COMMAND.PROFILE_TWEETS,
+    );
   }
 
   public async getFollowers(
@@ -174,11 +227,14 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "followers",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: FOLLOW_TYPE.FOLLOWERS,
+      }),
+      CLI_COMMAND.FOLLOWERS,
+    );
   }
 
   public async getFollowing(
@@ -186,11 +242,14 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "following",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: FOLLOW_TYPE.FOLLOWING,
+      }),
+      CLI_COMMAND.FOLLOWING,
+    );
   }
 
   public async getVerifiedFollowers(
@@ -198,11 +257,14 @@ export class XTrawl {
     options: Omit<FollowsRequest, "targets" | "followType"> = {},
   ): Promise<readonly FollowRecord[]> {
     const normalized = normalizeTargets(targets).targets;
-    return collectFollows(this.collectionContext(), normalized, {
-      targets: normalized,
-      ...options,
-      followType: "verified_followers",
-    });
+    return this.track(
+      collectFollows(this.collectionContext(options.signal), normalized, {
+        targets: normalized,
+        ...options,
+        followType: FOLLOW_TYPE.VERIFIED_FOLLOWERS,
+      }),
+      CLI_COMMAND.VERIFIED_FOLLOWERS,
+    );
   }
 
   public inspect(): ClientInspection {
@@ -220,12 +282,65 @@ export class XTrawl {
     return this.pool.summary;
   }
 
+  public async shutdown(): Promise<void> {
+    this.shutdownController.abort();
+    await Promise.allSettled([...this.inflight]);
+    await this.sessions?.close();
+    this.close();
+  }
+
   public close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    if (!this.shutdownController.signal.aborted) this.shutdownController.abort();
+    void this.sessions?.close();
     this.storage.database.close();
   }
 
-  private collectionContext(): CollectionContext {
-    return { config: this.config, pool: this.pool, engine: this.engine, storage: this.storage };
+  private collectionContext(signal?: AbortSignal): CollectionContext {
+    if (this.closed) throw new ConfigError("XTrawl has been shut down.");
+    const combined = this.operationSignal(signal);
+    return {
+      config: this.config,
+      pool: this.pool,
+      engine: this.engine,
+      storage: this.storage,
+      ...(combined ? { signal: combined } : {}),
+    };
+  }
+
+  private operationSignal(signal?: AbortSignal): AbortSignal | undefined {
+    return combineSignals(this.shutdownController.signal, signal);
+  }
+
+  private track<T>(work: Promise<T>, operation = "operation"): Promise<T> {
+    this.inflight.add(work);
+    const started = Date.now();
+    return work
+      .then((value) => {
+        this.emit({ name: "operation", at: started, durationMs: Date.now() - started, operation });
+        return value;
+      })
+      .catch((error: unknown) => {
+        this.emit({
+          name: "operation",
+          at: started,
+          durationMs: Date.now() - started,
+          operation,
+          stopReason: error instanceof Error ? error.name : "error",
+        });
+        throw error;
+      })
+      .finally(() => {
+        this.inflight.delete(work);
+      });
+  }
+
+  private emit(event: DiagnosticEvent): void {
+    this.onDiagnostic?.({
+      ...event,
+      ...(event.account ? { account: tokenFingerprint(event.account) } : {}),
+    });
   }
 
   private provisionSqlite(options: ClientOptions): void {
@@ -268,22 +383,6 @@ export class XTrawl {
           cookies: { ...account.cookies, ...cookies },
         });
     }
-  }
-}
-
-function redactProxy(proxy: string | ProxySettings): string | ProxySettings {
-  if (typeof proxy !== "string")
-    return {
-      ...proxy,
-      ...(proxy.password ? { password: "[redacted]" } : {}),
-    };
-  try {
-    const value = new URL(proxy.includes("://") ? proxy : `http://${proxy}`);
-    if (value.username) value.username = "[redacted]";
-    if (value.password) value.password = "[redacted]";
-    return value.toString();
-  } catch {
-    return "[redacted]";
   }
 }
 

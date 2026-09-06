@@ -1,12 +1,15 @@
+import type { API_HTTP_MODE } from "../constants/config.js";
 import type { ProxySettings } from "../domain/accounts.js";
-import type { ApiHttpMode } from "./validation.js";
+import type { OutputFormat } from "../domain/output.js";
+
+export type ApiHttpMode = (typeof API_HTTP_MODE)[keyof typeof API_HTTP_MODE];
 
 export interface ClientConfig {
   readonly dbPath: string;
   readonly proxy?: string | ProxySettings;
   readonly concurrency: number;
   readonly saveDir: string;
-  readonly saveFormat: "csv" | "json" | "both";
+  readonly saveFormat: OutputFormat;
   readonly apiHttpMode: ApiHttpMode;
   readonly apiHttpImpersonate?: string;
   readonly apiUserAgent?: string;
@@ -34,6 +37,7 @@ export interface ClientConfig {
   readonly proxyCheckTimeoutMs: number;
   readonly profileTimelineAllowAnonymous: boolean;
   readonly manifestUrl?: string;
+  readonly allowedManifestOrigins: readonly string[];
   readonly manifestTtlMs: number;
   readonly manifestUpdateOnInit: boolean;
   readonly manifestScrapeOnInit: boolean;

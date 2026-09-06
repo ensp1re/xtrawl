@@ -1,6 +1,9 @@
-export type TweetType =
-  "all" | "originals_only" | "replies_only" | "retweets_only" | "exclude_replies" | "exclude_retweets";
-export type FollowType = "followers" | "following" | "verified_followers";
+import type { FOLLOW_TYPE, SEARCH_DISPLAY, TWEET_TYPE } from "../constants/requests.js";
+import type { OutputFormat } from "./output.js";
+
+export type TweetType = (typeof TWEET_TYPE)[keyof typeof TWEET_TYPE];
+export type FollowType = (typeof FOLLOW_TYPE)[keyof typeof FOLLOW_TYPE];
+export type SearchDisplayType = (typeof SEARCH_DISPLAY)[keyof typeof SEARCH_DISPLAY];
 
 export interface SearchRequest {
   readonly since?: string;
@@ -32,13 +35,14 @@ export interface SearchRequest {
   readonly within?: string;
   readonly lang?: string;
   readonly limit?: number;
-  readonly displayType?: "Top" | "Latest";
+  readonly displayType?: SearchDisplayType;
   readonly resume?: boolean;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: OutputFormat;
   readonly saveDir?: string;
   readonly saveName?: string;
   readonly maxEmptyPages?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type SearchPageRequest = Omit<
@@ -47,6 +51,7 @@ export type SearchPageRequest = Omit<
 > & {
   readonly cursor?: string;
   readonly maxAccountSwitches?: number;
+  readonly signal?: AbortSignal;
 };
 
 export interface TargetInput {
@@ -59,9 +64,10 @@ export interface TargetInput {
 
 export interface UserInfoRequest {
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: OutputFormat;
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface ProfileTimelineRequest {
@@ -71,14 +77,13 @@ export interface ProfileTimelineRequest {
   readonly maxPagesPerProfile?: number;
   readonly resume?: boolean;
   readonly initialCursors?: Readonly<Record<string, string>>;
-  readonly cursorHandoff?: boolean;
   readonly maxAccountSwitches?: number;
-  readonly allowAnonymous?: boolean;
   readonly maxEmptyPages?: number;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: OutputFormat;
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface FollowsRequest {
@@ -89,12 +94,12 @@ export interface FollowsRequest {
   readonly maxPagesPerProfile?: number;
   readonly resume?: boolean;
   readonly initialCursors?: Readonly<Record<string, string>>;
-  readonly cursorHandoff?: boolean;
   readonly maxAccountSwitches?: number;
   readonly maxEmptyPages?: number;
   readonly rawJson?: boolean;
   readonly save?: boolean;
-  readonly saveFormat?: "csv" | "json" | "both";
+  readonly saveFormat?: OutputFormat;
   readonly saveDir?: string;
   readonly saveName?: string;
+  readonly signal?: AbortSignal;
 }

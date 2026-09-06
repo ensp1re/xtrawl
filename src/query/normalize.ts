@@ -1,46 +1,11 @@
+import { SEARCH_DISPLAY, TWEET_TYPE } from "../constants/requests.js";
 import type { SearchRequest, TweetType } from "../domain/requests.js";
 import { asBoolean, asInteger, asString, asStringList } from "../utils/guards.js";
+import type { NormalizedSearch } from "./types.js";
 
-export interface NormalizedSearch {
-  readonly searchQuery: string;
-  readonly allWords: readonly string[];
-  readonly anyWords: readonly string[];
-  readonly exactPhrases: readonly string[];
-  readonly excludeWords: readonly string[];
-  readonly hashtagsAny: readonly string[];
-  readonly hashtagsExclude: readonly string[];
-  readonly fromUsers: readonly string[];
-  readonly toUsers: readonly string[];
-  readonly mentioningUsers: readonly string[];
-  readonly tweetType: TweetType;
-  readonly verifiedOnly: boolean;
-  readonly blueVerifiedOnly: boolean;
-  readonly hasImages: boolean;
-  readonly hasVideos: boolean;
-  readonly hasLinks: boolean;
-  readonly hasMentions: boolean;
-  readonly hasHashtags: boolean;
-  readonly minLikes: number;
-  readonly minReplies: number;
-  readonly minRetweets: number;
-  readonly place: string;
-  readonly geocode: string;
-  readonly near: string;
-  readonly within: string;
-  readonly lang: string;
-  readonly since: string;
-  readonly until: string;
-  readonly displayType: string;
-}
+export type { NormalizedSearch } from "./types.js";
 
-const VALID_TWEET_TYPES: ReadonlySet<string> = new Set([
-  "all",
-  "originals_only",
-  "replies_only",
-  "retweets_only",
-  "exclude_replies",
-  "exclude_retweets",
-]);
+const VALID_TWEET_TYPES: ReadonlySet<string> = new Set(Object.values(TWEET_TYPE));
 
 export function normalizeSearch(input: SearchRequest | Record<string, unknown> = {}): {
   readonly value: NormalizedSearch;
@@ -87,8 +52,8 @@ export function normalizeSearch(input: SearchRequest | Record<string, unknown> =
     unique(
       normalizedList(key).map((item) => (item.startsWith("#") || item.startsWith("$") ? item : `#${item}`)),
     );
-  const tweetTypeValue = asString(coerced.tweetType) ?? "all";
-  const tweetType = VALID_TWEET_TYPES.has(tweetTypeValue) ? (tweetTypeValue as TweetType) : "all";
+  const tweetTypeValue = asString(coerced.tweetType) ?? TWEET_TYPE.ALL;
+  const tweetType = VALID_TWEET_TYPES.has(tweetTypeValue) ? (tweetTypeValue as TweetType) : TWEET_TYPE.ALL;
   const errors = VALID_TWEET_TYPES.has(tweetTypeValue) ? [] : [`Invalid tweetType: ${tweetTypeValue}`];
   return {
     value: {
@@ -120,7 +85,8 @@ export function normalizeSearch(input: SearchRequest | Record<string, unknown> =
       lang: asString(coerced.lang) ?? "",
       since: asString(coerced.since) ?? "",
       until: asString(coerced.until) ?? "",
-      displayType: asString(coerced.displayType) ?? "Top",
+      displayType:
+        asString(coerced.displayType) === SEARCH_DISPLAY.LATEST ? SEARCH_DISPLAY.LATEST : SEARCH_DISPLAY.TOP,
     },
     warnings,
     errors,
@@ -149,11 +115,11 @@ export function buildEffectiveQuery(value: NormalizedSearch): string {
   if (value.lang && !hasOperator(value.searchQuery, "lang")) parts.push(`lang:${value.lang}`);
   if (!hasFilterOperator(value.searchQuery)) {
     const filters: Partial<Record<TweetType, readonly string[]>> = {
-      originals_only: ["-filter:replies", "-filter:retweets"],
-      replies_only: ["filter:replies"],
-      retweets_only: ["filter:retweets"],
-      exclude_replies: ["-filter:replies"],
-      exclude_retweets: ["-filter:retweets"],
+      [TWEET_TYPE.ORIGINALS_ONLY]: ["-filter:replies", "-filter:retweets"],
+      [TWEET_TYPE.REPLIES_ONLY]: ["filter:replies"],
+      [TWEET_TYPE.RETWEETS_ONLY]: ["filter:retweets"],
+      [TWEET_TYPE.EXCLUDE_REPLIES]: ["-filter:replies"],
+      [TWEET_TYPE.EXCLUDE_RETWEETS]: ["-filter:retweets"],
     };
     parts.push(...(filters[value.tweetType] ?? []));
     for (const [field, filter] of [

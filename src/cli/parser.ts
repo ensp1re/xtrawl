@@ -1,25 +1,15 @@
+import { CLI_COMMAND } from "../constants/cli.js";
+import { FOLLOW_TYPE, SEARCH_DISPLAY, TWEET_TYPE } from "../constants/requests.js";
+import { SAVE_FORMAT } from "../constants/output.js";
 import type {
   FollowType,
   FollowsRequest,
   ProfileTimelineRequest,
   SearchRequest,
 } from "../domain/requests.js";
+import type { CliArgs } from "./types.js";
 
-export interface CliArgs {
-  readonly authToken?: string;
-  readonly csrfToken?: string;
-  readonly cookiesFile?: string;
-  readonly envFile?: string;
-  readonly dbPath: string;
-  readonly proxy?: string;
-  readonly concurrency: number;
-  readonly manifestScrapeOnInit: boolean;
-  readonly verbose: boolean;
-  readonly command?:
-    "search" | "tweet" | "profile-tweets" | "followers" | "following" | "verified-followers" | "user-info";
-  readonly values: readonly string[];
-  readonly options: Readonly<Record<string, string | boolean | readonly string[]>>;
-}
+export type { CliArgs } from "./types.js";
 
 export class CliUsageError extends Error {}
 
@@ -63,17 +53,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   }
   const command = argv[index] as CliArgs["command"] | undefined;
   if (!command) return { ...global, values: [], options: {}, command: undefined };
-  if (
-    ![
-      "search",
-      "tweet",
-      "profile-tweets",
-      "followers",
-      "following",
-      "verified-followers",
-      "user-info",
-    ].includes(command)
-  )
+  if (!(Object.values(CLI_COMMAND) as string[]).includes(command))
     throw new CliUsageError(`Unknown command: ${command}`);
   index += 1;
   const values: string[] = [];
@@ -109,13 +89,20 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     index += equals > 2 ? 1 : 2;
   }
   if (
-    ["tweet", "profile-tweets", "followers", "following", "verified-followers", "user-info"].includes(
-      command,
-    ) &&
+    (
+      [
+        CLI_COMMAND.TWEET,
+        CLI_COMMAND.PROFILE_TWEETS,
+        CLI_COMMAND.FOLLOWERS,
+        CLI_COMMAND.FOLLOWING,
+        CLI_COMMAND.VERIFIED_FOLLOWERS,
+        CLI_COMMAND.USER_INFO,
+      ] as string[]
+    ).includes(command) &&
     values.length === 0
   )
     throw new CliUsageError(
-      command === "tweet"
+      command === CLI_COMMAND.TWEET
         ? "tweet requires at least one post ID or status URL"
         : `${command} requires at least one user`,
     );
@@ -183,21 +170,11 @@ function validateCommandValue(key: string, value: string): void {
     if (!Number.isInteger(parsed) || parsed < 0)
       throw new CliUsageError(`--${key} must be a non-negative integer`);
   }
-  if (key === "save-format" && !["csv", "json", "both"].includes(value))
-    throw new CliUsageError("--save-format must be csv, json, or both");
-  if (key === "display-type" && value !== "Top" && value !== "Latest")
+  if (key === "save-format" && !(Object.values(SAVE_FORMAT) as string[]).includes(value))
+    throw new CliUsageError("--save-format must be csv, json, both, or ndjson");
+  if (key === "display-type" && value !== SEARCH_DISPLAY.TOP && value !== SEARCH_DISPLAY.LATEST)
     throw new CliUsageError("--display-type must be Top or Latest");
-  if (
-    key === "tweet-type" &&
-    ![
-      "all",
-      "originals_only",
-      "replies_only",
-      "retweets_only",
-      "exclude_replies",
-      "exclude_retweets",
-    ].includes(value)
-  )
+  if (key === "tweet-type" && !(Object.values(TWEET_TYPE) as string[]).includes(value))
     throw new CliUsageError(`Unsupported --tweet-type value: ${value}`);
 }
 
@@ -237,7 +214,9 @@ export function searchRequestFromCli(args: CliArgs): SearchRequest {
     ...(option.geocode ? { geocode: String(option.geocode) } : {}),
     ...(option.near ? { near: String(option.near) } : {}),
     ...(option.within ? { within: String(option.within) } : {}),
-    ...(option["display-type"] ? { displayType: String(option["display-type"]) as "Top" | "Latest" } : {}),
+    ...(option["display-type"]
+      ? { displayType: String(option["display-type"]) as SearchRequest["displayType"] }
+      : {}),
     ...(option["tweet-type"]
       ? { tweetType: String(option["tweet-type"]) as SearchRequest["tweetType"] }
       : {}),
@@ -283,7 +262,7 @@ export function collectionOptionsFromCli(
     ...(option.resume === true ? { resume: true } : {}),
     ...(option.save === true ? { save: true } : {}),
     ...(option["save-format"]
-      ? { saveFormat: String(option["save-format"]) as "csv" | "json" | "both" }
+      ? { saveFormat: String(option["save-format"]) as SearchRequest["saveFormat"] }
       : {}),
     ...(option["save-dir"] ? { saveDir: String(option["save-dir"]) } : {}),
     ...(option["save-name"] ? { saveName: String(option["save-name"]) } : {}),
@@ -292,12 +271,12 @@ export function collectionOptionsFromCli(
 }
 
 export function followType(command: CliArgs["command"]): FollowType | undefined {
-  return command === "followers"
-    ? "followers"
-    : command === "following"
-      ? "following"
-      : command === "verified-followers"
-        ? "verified_followers"
+  return command === CLI_COMMAND.FOLLOWERS
+    ? FOLLOW_TYPE.FOLLOWERS
+    : command === CLI_COMMAND.FOLLOWING
+      ? FOLLOW_TYPE.FOLLOWING
+      : command === CLI_COMMAND.VERIFIED_FOLLOWERS
+        ? FOLLOW_TYPE.VERIFIED_FOLLOWERS
         : undefined;
 }
 

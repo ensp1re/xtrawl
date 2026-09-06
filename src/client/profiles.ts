@@ -1,12 +1,12 @@
 import type { ProfileRecord } from "../domain/records.js";
 import type { TargetInput, UserInfoRequest } from "../domain/requests.js";
-import { RunFailed } from "../domain/errors.js";
+import { ConfigError, RunFailed } from "../domain/errors.js";
 import { mapProfile } from "../engine/extractors.js";
 import { saveRows } from "../output/writer.js";
 import { targetOutputName } from "../output/names.js";
 import { targetUsername } from "../query/builder.js";
 import { ExecutionRunner } from "../runner/runner.js";
-import type { CollectionContext } from "./collectors.js";
+import type { CollectionContext } from "./types.js";
 
 export async function collectProfiles(
   context: CollectionContext,
@@ -14,7 +14,15 @@ export async function collectProfiles(
   options: UserInfoRequest,
 ): Promise<readonly ProfileRecord[]> {
   const records = new Map<number, ProfileRecord>();
-  const tasks = targets.flatMap((target, index) => (targetUsername(target) ? [{ index, target }] : []));
+  for (const target of targets) {
+    if (targetUsername(target)) continue;
+    if (target.userId)
+      throw new ConfigError(
+        `Profile lookup requires a username; numeric id ${target.userId} is not supported.`,
+      );
+    throw new ConfigError("Profile lookup requires a username.");
+  }
+  const tasks = targets.map((target, index) => ({ index, target }));
   const runner = new ExecutionRunner<(typeof tasks)[number]>({
     concurrency: Math.max(
       1,
@@ -25,8 +33,11 @@ export async function collectProfiles(
   const outcome = await runner.run(tasks, async ({ index, target }) => {
     const username = targetUsername(target);
     if (!username) return;
-    const user = await context.pool.execute("user-info", ({ session }) =>
-      context.engine.lookupUser(session, username),
+    const user = await context.pool.execute(
+      "user-info",
+      ({ session, signal, chargeRequest }) =>
+        context.engine.lookupUser(session, username, signal ?? context.signal, chargeRequest),
+      context.signal ? { signal: context.signal } : {},
     );
     records.set(index, mapProfile(user, target, username));
   });

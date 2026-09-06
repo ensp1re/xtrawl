@@ -1,15 +1,9 @@
+import { EMPTY_REASON } from "../constants/pages.js";
+import type { FollowPage, TweetPage } from "../domain/pages.js";
 import type { FollowRecord, ProfileRecord, TweetRecord } from "../domain/records.js";
 import { asInteger, asString, isRecord } from "../utils/guards.js";
 
-export interface TweetPage {
-  readonly tweets: readonly TweetRecord[];
-  readonly cursor?: string;
-}
-
-export interface FollowPage {
-  readonly users: readonly Record<string, unknown>[];
-  readonly cursor?: string;
-}
+export type { FollowPage, RequestQuota, TweetPage } from "../domain/pages.js";
 
 export function extractUserResult(payload: unknown): Record<string, unknown> | undefined {
   const root = isRecord(payload) ? payload : {};
@@ -61,20 +55,24 @@ export function mapFollow(
 }
 
 export function extractSearchTweets(payload: unknown): TweetPage {
-  const root = isRecord(payload) ? payload : {};
-  const data = isRecord(root.data) ? root.data : {};
-  const search = isRecord(data.search_by_raw_query) ? data.search_by_raw_query : {};
+  const root = isRecord(payload) ? payload : undefined;
+  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
+  const data = root.data;
+  const search = isRecord(data.search_by_raw_query) ? data.search_by_raw_query : undefined;
+  if (!search) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const timeline = isRecord(search.search_timeline) ? search.search_timeline : {};
   const nested = isRecord(timeline.timeline) ? timeline.timeline : {};
   return extractTweetsFromInstructions(nested.instructions);
 }
 
 export function extractProfileTweets(payload: unknown): TweetPage {
-  const root = isRecord(payload) ? payload : {};
-  const data = isRecord(root.data) ? root.data : {};
+  const root = isRecord(payload) ? payload : undefined;
+  if (!root || !isRecord(root.data)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
+  const data = root.data;
   const user = isRecord(data.user) ? data.user : {};
   const result = isRecord(user.result) ? user.result : {};
-  const timeline = isRecord(result.timeline) ? result.timeline : {};
+  if (!isRecord(result.timeline)) return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
+  const timeline = result.timeline;
   const nested = isRecord(timeline.timeline) ? timeline.timeline : {};
   return extractTweetsFromInstructions(nested.instructions);
 }
@@ -97,10 +95,7 @@ export function extractFollows(payload: unknown): FollowPage {
       const content = isRecord(entry.content) ? entry.content : {};
       const candidateCursor = asString(content.value);
       const cursorType = asString(content.cursorType)?.toLowerCase();
-      if (
-        candidateCursor &&
-        (String(entry.entryId ?? "").startsWith("cursor-bottom-") || cursorType === "bottom" || !cursor)
-      )
+      if (candidateCursor && isForwardCursor(String(entry.entryId ?? ""), cursorType))
         cursor = candidateCursor;
       for (const node of followUsersFromContent(content)) users.push(node);
     }
@@ -164,6 +159,8 @@ export function normalizeUser(
 }
 
 function extractTweetsFromInstructions(value: unknown): TweetPage {
+  if (value !== undefined && !Array.isArray(value))
+    return { tweets: [], emptyReason: EMPTY_REASON.MALFORMED };
   const instructions = Array.isArray(value) ? value.filter(isRecord) : [];
   const tweets: TweetRecord[] = [];
   let cursor: string | undefined;
@@ -173,11 +170,7 @@ function extractTweetsFromInstructions(value: unknown): TweetPage {
       const content = isRecord(entry.content) ? entry.content : {};
       const valueText = asString(content.value);
       const cursorType = asString(content.cursorType)?.toLowerCase();
-      if (
-        valueText &&
-        (entryId.includes("cursor-bottom") || cursorType === "bottom" || entryId.startsWith("cursor-"))
-      )
-        cursor = valueText;
+      if (valueText && isForwardCursor(entryId, cursorType)) cursor = valueText;
       if (!entryId.startsWith("tweet-")) continue;
       const itemContent = isRecord(content.itemContent) ? content.itemContent : {};
       const tweetResults = isRecord(itemContent.tweet_results) ? itemContent.tweet_results : {};
@@ -185,7 +178,17 @@ function extractTweetsFromInstructions(value: unknown): TweetPage {
       if (raw) tweets.push(mapTweet(raw, entryId));
     }
   }
-  return { tweets, ...(cursor ? { cursor } : {}) };
+  return {
+    tweets,
+    ...(cursor ? { cursor } : {}),
+    ...(tweets.length === 0 && !cursor ? { emptyReason: EMPTY_REASON.EMPTY } : {}),
+  };
+}
+
+function isForwardCursor(entryId: string, cursorType: string | undefined): boolean {
+  const type = cursorType ?? "";
+  if (type === "top") return false;
+  return entryId.includes("cursor-bottom") || type === "bottom" || type === "showmore";
 }
 
 function mapTweet(rawResult: Record<string, unknown>, entryId: string): TweetRecord {

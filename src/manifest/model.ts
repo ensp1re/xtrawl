@@ -1,8 +1,17 @@
-import type { FeatureFlags, FieldToggles, Manifest, ManifestPayload } from "../domain/manifest.js";
+import type {
+  FeatureFlags,
+  FieldToggles,
+  Manifest,
+  ManifestCreateOptions,
+  ManifestPayload,
+} from "../domain/manifest.js";
 import { ManifestError } from "../domain/errors.js";
 import { asInteger, asString, isRecord } from "../utils/guards.js";
+import { assertCredentialDestination } from "./destinations.js";
 
-export function createManifest(payload: ManifestPayload): Manifest {
+export type { ManifestCreateOptions } from "../domain/manifest.js";
+
+export function createManifest(payload: ManifestPayload, options: ManifestCreateOptions = {}): Manifest {
   if (!payload || !isRecord(payload.queryIds) || !isRecord(payload.endpoints)) {
     throw new ManifestError("Manifest requires queryIds and endpoints objects.");
   }
@@ -10,6 +19,13 @@ export function createManifest(payload: ManifestPayload): Manifest {
   const endpoints = mapStrings(payload.endpoints);
   if (!queryIds.search_timeline || !endpoints.search_timeline)
     throw new ManifestError("Manifest requires a search endpoint.");
+  for (const [operation, endpoint] of Object.entries(endpoints)) {
+    const queryId = queryIds[operation] ?? "validation";
+    assertCredentialDestination(
+      endpoint.includes("{query_id}") ? endpoint.replace("{query_id}", queryId) : endpoint,
+      options.allowedOrigins ?? [],
+    );
+  }
   const features = mapBooleans(payload.features);
   const operationFeatures = mapBooleanMap(payload.operationFeatures);
   const operationFieldToggles = mapBooleanMap(payload.operationFieldToggles);

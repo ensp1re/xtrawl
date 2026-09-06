@@ -1,16 +1,7 @@
-import { TaskQueue, type QueueTask } from "./task-queue.js";
+import type { QueueTask, RunnerOptions, RunnerResult } from "../domain/runner.js";
+import { TaskQueue } from "./task-queue.js";
 
-export interface RunnerOptions {
-  readonly concurrency: number;
-  readonly leaseTtlMs?: number;
-  readonly maxAttempts?: number;
-}
-
-export interface RunnerResult<T> {
-  readonly complete: readonly T[];
-  readonly failed: readonly { readonly task: QueueTask<T>; readonly error: unknown }[];
-  readonly retries: number;
-}
+export type { RunnerOptions, RunnerResult } from "../domain/runner.js";
 
 export class ExecutionRunner<T> {
   public constructor(private readonly options: RunnerOptions) {}
@@ -26,14 +17,16 @@ export class ExecutionRunner<T> {
         if (!task) return;
         try {
           await worker(task.payload);
-          queue.ack(task.id);
-          complete.push(task.payload);
+          if (queue.ack(task.id, task.generation)) complete.push(task.payload);
         } catch (error) {
-          if (task.attempts < (this.options.maxAttempts ?? 3))
-            queue.retry(task.id, error instanceof Error ? error.message : String(error));
-          else {
-            queue.fail(task.id, error instanceof Error ? error.message : String(error));
-            failures.push({ task: queue.snapshot().find((item) => item.id === task.id) ?? task, error });
+          const message = error instanceof Error ? error.message : String(error);
+          if (task.attempts < (this.options.maxAttempts ?? 3)) {
+            queue.retry(task.id, message, task.generation);
+          } else if (queue.fail(task.id, message, task.generation)) {
+            failures.push({
+              task: queue.snapshot().find((item) => item.id === task.id) ?? task,
+              error,
+            });
           }
         }
       }

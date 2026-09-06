@@ -1,22 +1,18 @@
-import type { ClientConfig } from "../config/types.js";
+import { randomUUID } from "node:crypto";
+import { PROGRESS_STATE } from "../constants/collection.js";
 import type { FollowRecord, SearchResult, TweetRecord } from "../domain/records.js";
 import type { FollowsRequest, ProfileTimelineRequest, TargetInput } from "../domain/requests.js";
 import { mapFollow } from "../engine/extractors.js";
-import type { ApiEngine } from "../engine/api-engine.js";
-import type { AccountPool } from "../pool/account-pool.js";
 import { RunFailed } from "../domain/errors.js";
-import { queryHash } from "../query/hash.js";
+import { collectionIdentity } from "../query/collection-id.js";
 import { ExecutionRunner } from "../runner/runner.js";
-import type { StorageBundle } from "../storage/index.js";
 import { saveRows } from "../output/writer.js";
 import { targetOutputName } from "../output/names.js";
+import { commitAcceptedPage } from "./page-commit.js";
+import type { CollectionContext, SaveOptions } from "./types.js";
+import { isRecord } from "../utils/guards.js";
 
-export interface CollectionContext {
-  readonly config: ClientConfig;
-  readonly pool: AccountPool;
-  readonly engine: ApiEngine;
-  readonly storage: StorageBundle;
-}
+export type { CollectionContext } from "./types.js";
 
 export async function collectProfileTweets(
   context: CollectionContext,
@@ -24,6 +20,7 @@ export async function collectProfileTweets(
   options: Omit<ProfileTimelineRequest, "targets">,
 ): Promise<SearchResult> {
   const request: ProfileTimelineRequest = { targets, ...options };
+  const runScope = options.resume ? {} : { runId: randomUUID() };
   const out: TweetRecord[] = [];
   const seenByTarget = new Map<string, Set<string>>();
   const cursors = new Map<string, string>();
@@ -43,56 +40,77 @@ export async function collectProfileTweets(
       },
       options.maxAccountSwitches,
     );
-    const checkpointHash = queryHash({ operation: "profile_tweets", target, options });
-    const seen = seenByTarget.get(checkpointHash) ?? new Set<string>();
-    seenByTarget.set(checkpointHash, seen);
-    const saved = options.resume ? context.storage.checkpoints.get(checkpointHash) : undefined;
+    const collectionId = collectionIdentity("profile_tweets", { target, ...options }, runScope);
+    const seen = seenByTarget.get(collectionId) ?? new Set<string>();
+    seenByTarget.set(collectionId, seen);
+    if (options.resume) {
+      for (const record of context.storage.progress.accepted(collectionId)) {
+        if (typeof record.id === "string") seen.add(record.id);
+        if (isTweetRecord(record.payload)) {
+          out.push(record.payload);
+          counts.set(collectionId, (counts.get(collectionId) ?? 0) + 1);
+        }
+      }
+    }
+    const saved = context.storage.progress.task(collectionId, collectionId);
     let cursor =
-      cursors.get(checkpointHash) ??
+      cursors.get(collectionId) ??
       options.initialCursors?.[targetKey(target, resolved.userId)] ??
-      saved?.root;
+      saved?.cursor ??
+      (options.resume ? context.storage.checkpoints.get(collectionId)?.root : undefined);
     let empty = 0;
     let pages = 0;
-    let profileCount = counts.get(checkpointHash) ?? 0;
+    let profileCount = counts.get(collectionId) ?? 0;
     const maxPages = options.maxPagesPerProfile ?? Number.POSITIVE_INFINITY;
-    while (pages < maxPages && !limitReached) {
+    while (pages < maxPages && !limitReached && saved?.state !== PROGRESS_STATE.EXHAUSTED) {
       pages += 1;
+      const inputCursor = cursor;
       const page = await context.pool.execute(
         "profile-tweets",
-        ({ session }) => context.engine.profilePage(session, resolved.userId, request, cursor),
+        ({ session, signal, chargeRequest }) =>
+          context.engine.profilePage(
+            session,
+            resolved.userId,
+            request,
+            inputCursor,
+            signal ?? context.signal,
+            chargeRequest,
+          ),
         {
           countTweets: (value) => value.tweets.length,
           onRetry: () => {
             poolRetries += 1;
           },
           maxAccountSwitches: options.maxAccountSwitches,
+          ...(context.signal ? { signal: context.signal } : {}),
         },
       );
-      const globalRemaining =
-        options.limit === undefined ? page.tweets.length : Math.max(0, options.limit - out.length);
-      const profileRemaining =
-        options.perProfileLimit === undefined
-          ? page.tweets.length
-          : Math.max(0, options.perProfileLimit - profileCount);
-      const remaining = page.tweets.slice(0, Math.min(globalRemaining, profileRemaining));
+      const batch: Array<{ id: string; payload: TweetRecord }> = [];
       let added = 0;
-      for (const tweet of remaining) {
+      let capped = false;
+      for (const tweet of page.tweets) {
         if (seen.has(tweet.tweetId)) continue;
-        seen.add(tweet.tweetId);
-        out.push(tweet);
-        added += 1;
-        profileCount += 1;
-        counts.set(checkpointHash, profileCount);
-        if (options.limit !== undefined && out.length >= options.limit) {
-          limitReached = true;
+        if (
+          (options.limit !== undefined && out.length + batch.length >= options.limit) ||
+          (options.perProfileLimit !== undefined && profileCount + batch.length >= options.perProfileLimit)
+        ) {
+          capped = true;
+          if (options.limit !== undefined && out.length + batch.length >= options.limit) limitReached = true;
           break;
         }
+        batch.push({ id: tweet.tweetId, payload: tweet });
+        added += 1;
       }
-      empty = added === 0 ? empty + 1 : 0;
-      if (options.resume && page.cursor)
-        context.storage.checkpoints.save(checkpointHash, { root: page.cursor });
-      if (page.cursor) cursors.set(checkpointHash, page.cursor);
-      if (
+      for (const item of batch) {
+        seen.add(item.id);
+        out.push(item.payload);
+        profileCount += 1;
+      }
+      counts.set(collectionId, profileCount);
+      if (options.limit !== undefined && out.length >= options.limit) limitReached = true;
+      empty = added === 0 && !capped ? empty + 1 : 0;
+      const exhausted =
+        !capped &&
         stopPaging(
           options,
           out.length,
@@ -100,12 +118,19 @@ export async function collectProfileTweets(
           page.cursor,
           empty,
           options.maxEmptyPages ?? context.config.maxEmptyPages,
-        )
-      )
-        break;
+        );
+      commitAcceptedPage(context.storage, {
+        collectionId,
+        taskId: collectionId,
+        state: capped ? PROGRESS_STATE.CAPPED : exhausted ? PROGRESS_STATE.EXHAUSTED : PROGRESS_STATE.ACTIVE,
+        ...(inputCursor === undefined ? {} : { inputCursor }),
+        ...(page.cursor === undefined ? {} : { nextCursor: page.cursor }),
+        records: batch,
+        persistLegacyCheckpoint: Boolean(options.resume),
+      });
+      if (capped || limitReached || exhausted) break;
       cursor = page.cursor;
     }
-    if (!limitReached) context.storage.checkpoints.clear(checkpointHash);
   });
   if (outcome.failed.length > 0 && (context.config.strict || out.length === 0))
     throw failureFor("Profile timeline", outcome.failed);
@@ -128,6 +153,7 @@ export async function collectFollows(
   targets: readonly TargetInput[],
   options: FollowsRequest,
 ): Promise<readonly FollowRecord[]> {
+  const runScope = options.resume ? {} : { runId: randomUUID() };
   const out: FollowRecord[] = [];
   const seenByTarget = new Map<string, Set<string>>();
   const cursors = new Map<string, string>();
@@ -138,26 +164,47 @@ export async function collectFollows(
   });
   const outcome = await runner.run(targets, async (target) => {
     const resolved = await resolveTarget(context, target, undefined, options.maxAccountSwitches);
-    const checkpointHash = queryHash({ operation: options.followType, target, options });
-    const saved = options.resume ? context.storage.checkpoints.get(checkpointHash) : undefined;
+    const collectionId = collectionIdentity(options.followType, { target, ...options }, runScope);
+    const seen = seenByTarget.get(collectionId) ?? new Set<string>();
+    seenByTarget.set(collectionId, seen);
+    if (options.resume) {
+      for (const record of context.storage.progress.accepted(collectionId)) {
+        seen.add(record.id);
+        if (isFollowRecord(record.payload)) out.push(record.payload);
+      }
+    }
+    const saved = context.storage.progress.task(collectionId, collectionId);
     let cursor =
-      cursors.get(checkpointHash) ??
+      cursors.get(collectionId) ??
       options.initialCursors?.[targetKey(target, resolved.userId)] ??
-      saved?.root;
+      saved?.cursor ??
+      (options.resume ? context.storage.checkpoints.get(collectionId)?.root : undefined);
     let empty = 0;
     let pages = 0;
-    const seen = seenByTarget.get(checkpointHash) ?? new Set<string>();
-    seenByTarget.set(checkpointHash, seen);
     let targetCount = seen.size;
     const maxPages = options.maxPagesPerProfile ?? Number.POSITIVE_INFINITY;
-    while (pages < maxPages && !limitReached) {
+    while (pages < maxPages && !limitReached && saved?.state !== PROGRESS_STATE.EXHAUSTED) {
       pages += 1;
+      const inputCursor = cursor;
       const page = await context.pool.execute(
         options.followType,
-        ({ session }) => context.engine.followsPage(session, resolved.userId, options.followType, cursor),
-        { maxAccountSwitches: options.maxAccountSwitches },
+        ({ session, signal, chargeRequest }) =>
+          context.engine.followsPage(
+            session,
+            resolved.userId,
+            options.followType,
+            inputCursor,
+            signal ?? context.signal,
+            chargeRequest,
+          ),
+        {
+          maxAccountSwitches: options.maxAccountSwitches,
+          ...(context.signal ? { signal: context.signal } : {}),
+        },
       );
+      const batch: Array<{ id: string; payload: FollowRecord }> = [];
       let added = 0;
+      let capped = false;
       for (const user of page.users) {
         const mapped = mapFollow(
           user,
@@ -166,22 +213,28 @@ export async function collectFollows(
           options.rawJson,
         );
         const key = mapped.userId ?? mapped.username;
-        if (key && !seen.has(key) && withinProfileLimit(options.perProfileLimit, targetCount)) {
-          seen.add(key);
-          out.push(mapped);
-          added += 1;
-          targetCount += 1;
-          if (options.limit !== undefined && out.length >= options.limit) {
-            limitReached = true;
-            break;
-          }
+        if (!key || seen.has(key) || batch.some((item) => item.id === key)) continue;
+        if (!withinProfileLimit(options.perProfileLimit, targetCount + batch.length)) {
+          capped = true;
+          break;
         }
+        if (options.limit !== undefined && out.length + batch.length >= options.limit) {
+          capped = true;
+          limitReached = true;
+          break;
+        }
+        batch.push({ id: key, payload: mapped });
+        added += 1;
       }
-      empty = added === 0 ? empty + 1 : 0;
-      if (options.resume && page.cursor)
-        context.storage.checkpoints.save(checkpointHash, { root: page.cursor });
-      if (page.cursor) cursors.set(checkpointHash, page.cursor);
-      if (
+      for (const item of batch) {
+        seen.add(item.id);
+        out.push(item.payload);
+        targetCount += 1;
+      }
+      if (options.limit !== undefined && out.length >= options.limit) limitReached = true;
+      empty = added === 0 && !capped ? empty + 1 : 0;
+      const exhausted =
+        !capped &&
         stopPaging(
           options,
           out.length,
@@ -189,12 +242,19 @@ export async function collectFollows(
           page.cursor,
           empty,
           options.maxEmptyPages ?? context.config.maxEmptyPages,
-        )
-      )
-        break;
+        );
+      commitAcceptedPage(context.storage, {
+        collectionId,
+        taskId: collectionId,
+        state: capped ? PROGRESS_STATE.CAPPED : exhausted ? PROGRESS_STATE.EXHAUSTED : PROGRESS_STATE.ACTIVE,
+        ...(inputCursor === undefined ? {} : { inputCursor }),
+        ...(page.cursor === undefined ? {} : { nextCursor: page.cursor }),
+        records: batch,
+        persistLegacyCheckpoint: Boolean(options.resume),
+      });
+      if (capped || limitReached || exhausted) break;
       cursor = page.cursor;
     }
-    if (!limitReached) context.storage.checkpoints.clear(checkpointHash);
   });
   if (outcome.failed.length > 0 && (context.config.strict || out.length === 0))
     throw failureFor("Relationship collection", outcome.failed);
@@ -225,10 +285,16 @@ async function resolveTarget(
   maxAccountSwitches?: number,
 ): Promise<{ readonly username: string; readonly userId: string; readonly raw: Record<string, unknown> }> {
   if (target.userId && !target.username) return { username: target.userId, userId: target.userId, raw: {} };
-  return context.pool.execute("user-lookup", ({ session }) => context.engine.resolveTarget(session, target), {
-    onRetry,
-    maxAccountSwitches,
-  });
+  return context.pool.execute(
+    "user-lookup",
+    ({ session, signal, chargeRequest }) =>
+      context.engine.resolveTarget(session, target, signal ?? context.signal, chargeRequest),
+    {
+      onRetry,
+      maxAccountSwitches,
+      ...(context.signal ? { signal: context.signal } : {}),
+    },
+  );
 }
 
 function workerCount(context: CollectionContext, tasks: number): number {
@@ -266,4 +332,10 @@ function targetKey(target: TargetInput, resolvedUserId: string): string {
   return target.username ?? target.userId ?? target.profileUrl ?? target.raw ?? resolvedUserId;
 }
 
-type SaveOptions = Pick<ProfileTimelineRequest, "save" | "saveDir" | "saveFormat" | "saveName">;
+function isTweetRecord(value: unknown): value is TweetRecord {
+  return isRecord(value) && typeof value.tweetId === "string";
+}
+
+function isFollowRecord(value: unknown): value is FollowRecord {
+  return isRecord(value) && typeof value.type === "string";
+}

@@ -1,13 +1,8 @@
 import type { ClientTransaction } from "x-client-transaction-id";
+import { delay } from "../utils/abort.js";
+import type { TransactionIdOptions, TransactionIdSource } from "./types.js";
 
-export interface TransactionIdSource {
-  readonly create?: (method: string, url: string) => Promise<string | undefined>;
-}
-
-export interface TransactionIdOptions {
-  readonly enabled?: boolean;
-  readonly ttlMs?: number;
-}
+export type { TransactionIdOptions, TransactionIdSource } from "./types.js";
 
 export class TransactionIdProvider {
   private client?: ClientTransaction;
@@ -50,10 +45,25 @@ export class TransactionIdProvider {
   private async initialize(): Promise<ClientTransaction | undefined> {
     try {
       const { ClientTransaction, fetchXDocument } = await import("x-client-transaction-id");
-      this.client = await withTimeout(
-        fetchXDocument().then((document) => ClientTransaction.create(document)),
-        10_000,
-      );
+      // fetchXDocument cannot be cancelled. One bootstrap stays in-flight; a timeout
+      // abandons the wait and keeps the result if it later succeeds.
+      const work = fetchXDocument().then((document) => ClientTransaction.create(document));
+      const result = await Promise.race([
+        work.then((client) => ({ ok: true as const, client })),
+        delay(10_000).then(() => ({ ok: false as const })),
+      ]);
+      if (!result.ok) {
+        void work
+          .then((client) => {
+            this.client = client;
+            this.readyAt = Date.now();
+            this.retryAt = 0;
+          })
+          .catch(() => undefined);
+        this.retryAt = Date.now() + 5 * 60_000;
+        return undefined;
+      }
+      this.client = result.client;
       this.readyAt = Date.now();
       this.retryAt = 0;
       return this.client;
@@ -61,19 +71,5 @@ export class TransactionIdProvider {
       this.retryAt = Date.now() + 5 * 60_000;
       return undefined;
     }
-  }
-}
-
-async function withTimeout<T>(value: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      value,
-      new Promise<T>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error("Transaction bootstrap timed out.")), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }

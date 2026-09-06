@@ -12,6 +12,20 @@ function account(username: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("account repository policy boundaries", () => {
+  test("resets stale daily counters for the selected row only", () => {
+    const storage = openStorage(":memory:", { dailyRequestsLimit: 1, dailyTweetsLimit: 1 });
+    storage.accounts.upsert({
+      ...account("stale"),
+      dailyRequests: 9,
+      dailyTweets: 9,
+      lastResetDate: "2000-01-01",
+    });
+    const lease = storage.accounts.lease({ requireAuthMaterial: true });
+    expect(lease?.username).toBe("stale");
+    expect(storage.accounts.findByUsername("stale")?.dailyRequests).toBe(0);
+    storage.database.close();
+  });
+
   test("applies configured request and tweet limits", () => {
     const storage = openStorage(":memory:", { dailyRequestsLimit: 2, dailyTweetsLimit: 3 });
     storage.accounts.upsert(account("limited"));

@@ -1,8 +1,10 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { EngineError } from "../../src/domain/errors.js";
 import { writeCsv } from "../../src/output/csv-writer.js";
-import { writeJson } from "../../src/output/json-writer.js";
+import { writeJson, writeNdjson } from "../../src/output/json-writer.js";
 import { saveRows } from "../../src/output/writer.js";
 
 describe("output writers", () => {
@@ -30,16 +32,29 @@ describe("output writers", () => {
     expect(readFileSync(csv, "utf8").split("\n")).toHaveLength(4);
   });
 
-  test("retains existing rows when an append introduces a new column", async () => {
+  test("rejects CSV appends that would change the header schema", async () => {
     const root = mkdtempSync(join(tmpdir(), "graph-output-"));
     const path = join(root, "mixed.csv");
     await writeCsv(path, [{ username: "one", text: "first" }]);
-    await writeCsv(path, [{ username: "two", likes: 2 }], true);
-    const content = readFileSync(path, "utf8");
-    expect(content).toContain("one");
-    expect(content).toContain("two");
-    expect(content.split("\n")[0]).toContain("username");
-    expect(content.split("\n")[0]).toContain("likes");
+    await expect(writeCsv(path, [{ username: "two", likes: 2 }], true)).rejects.toBeInstanceOf(EngineError);
+    expect(readFileSync(path, "utf8")).toContain("one");
+    expect(readFileSync(path, "utf8")).not.toContain("likes");
+  });
+
+  test("preserves a corrupt JSON file instead of overwriting it on append", async () => {
+    const root = mkdtempSync(join(tmpdir(), "graph-output-"));
+    const path = join(root, "broken.json");
+    writeFileSync(path, "[{");
+    await expect(writeJson(path, [{ id: 1 }], true)).rejects.toBeInstanceOf(EngineError);
+    expect(readFileSync(path, "utf8")).toBe("[{");
+  });
+
+  test("appends NDJSON without rereading the existing file as JSON", async () => {
+    const root = mkdtempSync(join(tmpdir(), "graph-output-"));
+    const path = join(root, "rows.ndjson");
+    await writeNdjson(path, [{ id: 1 }]);
+    await writeNdjson(path, [{ id: 2 }], true);
+    expect(readFileSync(path, "utf8")).toBe('{"id":1}\n{"id":2}\n');
   });
 
   test("saves JSON and flattened CSV together", async () => {

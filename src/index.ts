@@ -1,8 +1,8 @@
 export { XTrawl } from "./client/client.js";
 export { XTrawlDatabase } from "./client/database.js";
 export { XTrawlAccounts } from "./client/accounts.js";
-export type { AccountImportOptions, AccountListOptions } from "./client/database.js";
-export type { ClientOptions } from "./client/types.js";
+export type { AccountImportOptions, AccountListOptions, ClientOptions } from "./client/types.js";
+export type { DiagnosticEvent, DiagnosticListener } from "./domain/diagnostics.js";
 export type { ClientConfig, ConfigInput } from "./config/types.js";
 export { validateConfig } from "./config/validation.js";
 export type {

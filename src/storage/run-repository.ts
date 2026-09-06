@@ -1,15 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { RUN_STATUS } from "../constants/runs.js";
+import type { RunRecord, RunStatus } from "../domain/runs.js";
+import { redactUnknown } from "../utils/redact.js";
 import type { StateDatabase } from "./database.js";
 
-export interface RunRecord {
-  readonly id: string;
-  readonly operation: string;
-  readonly queryHash?: string;
-  readonly startedAt: string;
-  readonly finishedAt?: string;
-  readonly status: "running" | "complete" | "failed";
-  readonly error?: unknown;
-}
+export type { RunRecord, RunStatus } from "../domain/runs.js";
 
 export class RunRepository {
   public constructor(private readonly database: StateDatabase) {}
@@ -20,7 +15,7 @@ export class RunRepository {
       operation,
       ...(queryHash ? { queryHash } : {}),
       startedAt: new Date().toISOString(),
-      status: "running",
+      status: RUN_STATUS.RUNNING,
     };
     this.database.run(
       "INSERT INTO runs(id,operation,query_hash,started_at,status) VALUES(?,?,?,?,?)",
@@ -33,13 +28,17 @@ export class RunRepository {
     return record;
   }
 
-  public finalize(id: string, status: "complete" | "failed", error?: unknown): boolean {
+  public finalize(
+    id: string,
+    status: Exclude<RunStatus, typeof RUN_STATUS.RUNNING>,
+    error?: unknown,
+  ): boolean {
     return (
       this.database.run(
         "UPDATE runs SET finished_at=?, status=?, error_json=? WHERE id=?",
         new Date().toISOString(),
         status,
-        error ? JSON.stringify(error) : null,
+        error ? JSON.stringify(redactUnknown(error)) : null,
         id,
       ).changes === 1
     );

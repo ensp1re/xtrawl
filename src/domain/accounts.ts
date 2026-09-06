@@ -1,3 +1,5 @@
+import type { ACCOUNT_HEALTH, PROXY_SCHEME } from "../constants/accounts.js";
+
 export type CookieMap = Readonly<Record<string, string>>;
 
 export interface AuthMaterial {
@@ -24,12 +26,13 @@ export interface ProxySettings {
   readonly https?: string;
   readonly host?: string;
   readonly port?: number;
-  readonly scheme?: "http" | "https" | "socks5";
+  readonly scheme?: ProxyScheme;
   readonly username?: string;
   readonly password?: string;
 }
 
-export type AccountStatus = "healthy" | "cooling_down" | "unusable";
+export type AccountStatus = (typeof ACCOUNT_HEALTH)[keyof typeof ACCOUNT_HEALTH];
+export type ProxyScheme = (typeof PROXY_SCHEME)[keyof typeof PROXY_SCHEME];
 
 export interface AccountRecord {
   readonly id?: number;
