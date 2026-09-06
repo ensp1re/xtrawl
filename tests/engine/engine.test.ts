@@ -110,4 +110,27 @@ describe("API engine and transport", () => {
     expect(requests).toHaveLength(2);
     storage.database.close();
   });
+
+  test("shares one live refresh across concurrent operation mismatches", async () => {
+    const storage = openStorage(":memory:");
+    const config = validateConfig();
+    let scrapes = 0;
+    const provider = new ManifestProvider(config, storage.manifests, undefined, undefined, async () => {
+      scrapes += 1;
+      await Promise.resolve();
+      return {
+        ...DEFAULT_MANIFEST,
+        queryIds: { ...DEFAULT_MANIFEST.queryIds, search_timeline: "refreshed-search" },
+      };
+    });
+    const session = sessionFactory((request) =>
+      request.url.includes("refreshed-search") ? response(tweetPayload()) : response("missing", 404),
+    )({ cookies: { auth_token: "a", ct0: "b" } });
+    const engine = new ApiEngine(config, provider, new GraphqlTransport(new TransactionIdProvider()));
+    await Promise.all(
+      Array.from({ length: 10 }, () => engine.search(session, { searchQuery: "hello", limit: 1 })),
+    );
+    expect(scrapes).toBe(1);
+    storage.database.close();
+  });
 });

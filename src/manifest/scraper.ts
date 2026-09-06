@@ -85,16 +85,21 @@ export async function scrapeManifestFromWeb(
   const response = await fetcher("https://x.com/home", { headers: pageHeaders, redirect: "follow" });
   if (!response.ok) throw new Error(`Manifest page failed with status ${response.status}`);
   const html = await response.text();
-  const scripts = [...new Set([...html.matchAll(/<script[^>]+src=["']([^"']+)["']/giu)])]
-    .map((match) => match[1])
-    .filter((item): item is string => Boolean(item))
-    .map((source) => safeScriptUrl(source))
-    .filter((source): source is string => Boolean(source))
-    .sort((left, right) => scriptPriority(left) - scriptPriority(right))
-    .slice(0, options.maxScripts ?? 20);
+  const seen = new Set<string>();
+  const scripts: string[] = [];
+  for (const match of html.matchAll(/<script[^>]+src=["']([^"']+)["']/giu)) {
+    const raw = match[1];
+    if (!raw) continue;
+    const url = safeScriptUrl(raw);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    scripts.push(url);
+  }
+  scripts.sort((left, right) => scriptPriority(left) - scriptPriority(right));
+  const selected = scripts.slice(0, options.maxScripts ?? 20);
   const discovered: Record<string, string> = {};
   const discoveredFeatures: Record<string, Record<string, boolean>> = {};
-  for (const url of scripts) {
+  for (const url of selected) {
     const bundle = await fetcher(url, { headers: scriptHeaders, redirect: "follow" });
     if (!bundle.ok) continue;
     const source = await bundle.text();

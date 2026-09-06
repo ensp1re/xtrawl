@@ -7,8 +7,14 @@ import { createManifest } from "./model.js";
 import { scrapeManifestFromWeb } from "./scraper.js";
 import type { ManifestScrapeOptions } from "./scraper.js";
 
+export const LIVE_MANIFEST_CACHE_KEY = "xtrawl:live-web";
+const REFRESH_BACKOFF_MS = 30_000;
+
 export class ManifestProvider {
-  private liveManifest?: Manifest;
+  private readonly local: Manifest;
+  private active?: Manifest;
+  private inFlightRefresh?: Promise<Manifest>;
+  private refreshFailedUntil = 0;
   private remoteRefreshAttempted = false;
 
   public constructor(
@@ -20,38 +26,50 @@ export class ManifestProvider {
       base: ManifestPayload,
       options?: ManifestScrapeOptions,
     ) => Promise<ManifestPayload> = scrapeManifestFromWeb,
-  ) {}
+  ) {
+    this.local = createManifest(DEFAULT_MANIFEST);
+  }
 
   public async getManifest(): Promise<Manifest> {
-    const local = createManifest(DEFAULT_MANIFEST);
-    if (this.config.manifestScrapeOnInit) {
-      if (this.liveManifest) return this.liveManifest;
-      return this.live(local, false);
-    }
+    if (this.active) return this.active;
+    if (this.config.manifestScrapeOnInit) return this.live(false);
     if (this.config.manifestUrl) {
-      if (this.config.manifestUpdateOnInit && !this.remoteRefreshAttempted) {
-        this.remoteRefreshAttempted = true;
-        try {
-          return await this.fetchRemote(this.config.manifestUrl);
-        } catch {
-          const stale = this.repository.get(this.config.manifestUrl, true);
-          if (stale) return createManifest(stale);
-        }
-      }
-      const cached = this.repository.get(this.config.manifestUrl);
-      if (cached) return createManifest(cached);
-      try {
-        return await this.fetchRemote(this.config.manifestUrl);
-      } catch {
-        const stale = this.repository.get(this.config.manifestUrl, true);
-        if (stale) return createManifest(stale);
+      const remote = await this.loadRemote(this.config.manifestUrl);
+      if (remote) {
+        this.active = remote;
+        return remote;
       }
     }
-    return local;
+    const cachedLive = this.readCached(LIVE_MANIFEST_CACHE_KEY);
+    if (cachedLive) {
+      this.active = cachedLive;
+      return cachedLive;
+    }
+    this.active = this.local;
+    return this.local;
   }
 
   public async refreshLive(authToken?: string): Promise<Manifest> {
-    return this.live(createManifest(DEFAULT_MANIFEST), true, authToken);
+    return this.live(true, authToken);
+  }
+
+  private async loadRemote(url: string): Promise<Manifest | undefined> {
+    if (this.config.manifestUpdateOnInit && !this.remoteRefreshAttempted) {
+      this.remoteRefreshAttempted = true;
+      try {
+        return await this.fetchRemote(url);
+      } catch {
+        const stale = this.readCached(url, true);
+        if (stale) return stale;
+      }
+    }
+    const cached = this.readCached(url);
+    if (cached) return cached;
+    try {
+      return await this.fetchRemote(url);
+    } catch {
+      return this.readCached(url, true);
+    }
   }
 
   private async fetchRemote(url: string): Promise<Manifest> {
@@ -61,20 +79,45 @@ export class ManifestProvider {
     return createManifest(payload);
   }
 
-  private async live(local: Manifest, strict: boolean, authToken?: string): Promise<Manifest> {
+  private async live(strict: boolean, authToken?: string): Promise<Manifest> {
+    if (this.inFlightRefresh) return this.inFlightRefresh;
+    if (Date.now() < this.refreshFailedUntil) {
+      if (strict) throw new ManifestError("Live manifest refresh is in backoff.");
+      return this.active ?? this.local;
+    }
+    const pending = this.runLive(strict, authToken).finally(() => {
+      if (this.inFlightRefresh === pending) this.inFlightRefresh = undefined;
+    });
+    this.inFlightRefresh = pending;
+    return pending;
+  }
+
+  private async runLive(strict: boolean, authToken?: string): Promise<Manifest> {
     try {
       const token = authToken ?? this.liveAuthToken;
       const payload = await this.liveScrape(DEFAULT_MANIFEST, {
         ...(token ? { authToken: token } : {}),
       });
+      this.repository.set(
+        this.config.manifestUrl ?? LIVE_MANIFEST_CACHE_KEY,
+        payload,
+        this.config.manifestTtlMs,
+      );
       if (this.config.manifestUrl)
-        this.repository.set(this.config.manifestUrl, payload, this.config.manifestTtlMs);
-      this.liveManifest = createManifest(payload);
-      return this.liveManifest;
+        this.repository.set(LIVE_MANIFEST_CACHE_KEY, payload, this.config.manifestTtlMs);
+      this.active = createManifest(payload);
+      this.refreshFailedUntil = 0;
+      return this.active;
     } catch (error) {
+      this.refreshFailedUntil = Date.now() + REFRESH_BACKOFF_MS;
       if (strict) throw new ManifestError(`Live manifest refresh failed: ${String(error)}`);
-      return local;
+      return this.active ?? this.local;
     }
+  }
+
+  private readCached(key: string, allowExpired = false): Manifest | undefined {
+    const payload = this.repository.get(key, allowExpired);
+    return payload ? createManifest(payload) : undefined;
   }
 }
 
