@@ -61,7 +61,12 @@
       "clean-room registry install of xtrawl@0.1.3 (public API import and installed CLI help)",
       "npm run verify (agent skill and xtrawl@0.1.4 release candidate; 146 passed, 3 live skipped)",
       "npx skills@1.5.26 add from local checkout for claude-code and codex (SKILL.md and references installed)",
-      "skill TypeScript snippet type-checked against built dist types"
+      "skill TypeScript snippet type-checked against built dist types",
+      "GitHub Actions Verify (pull request #25 passed)",
+      "merged pull request #25 into main (1151394) and tagged v0.1.4",
+      "npm publish xtrawl@0.1.4 (prepublish verification passed)",
+      "clean-room registry install of xtrawl@0.1.4 (public API import and installed CLI help)",
+      "npx skills@1.5.26 add ensp1re/xtrawl --agent cursor from GitHub (SKILL.md and references installed)"
     ],
     "failed": [
       "initial GitHub Actions run on Node.js 22.5.0 (bundled npm 10.8.2 exited before installing development dependencies)"
