@@ -32,6 +32,29 @@ if (packageJson.publishConfig?.access !== "public") {
   throw new Error("npm package must publish with public access");
 }
 
+const skill = await readFile(join(root, "skills/xtrawl/SKILL.md"), "utf8");
+if (!skill.startsWith("---\nname: xtrawl\ndescription: ")) {
+  throw new Error("agent skill frontmatter must start with name: xtrawl and a description");
+}
+if (!skill.includes(`xtrawl@${packageJson.version}`) || skill.includes("xtrawl@latest")) {
+  throw new Error("agent skill must pin the current package version");
+}
+const skillAgents = [
+  "claude-code",
+  "cursor",
+  "codex",
+  "opencode",
+  "github-copilot",
+  "gemini-cli",
+  "grok",
+  "windsurf",
+];
+for (const agent of skillAgents) {
+  if (!skill.includes(`npx skills add ensp1re/xtrawl --skill xtrawl --yes --agent ${agent}\n`)) {
+    throw new Error(`agent skill is missing the install line for ${agent}`);
+  }
+}
+
 const smokeDirectory = await mkdtemp(join(tmpdir(), "xtrawl-package-check-"));
 try {
   const cliLink = join(smokeDirectory, "xtrawl");

@@ -23,6 +23,7 @@
     {"name": "root-instructions", "paths": ["AGENTS.md"], "maxBytes": 16000},
     {"name": "product-spec", "paths": ["docs/product/specification.md"], "maxBytes": 24000},
     {"name": "architecture", "paths": ["docs/architecture/overview.md"], "maxBytes": 18000},
+    {"name": "agent-skill", "paths": ["skills/xtrawl/SKILL.md"], "maxBytes": 16000},
     {"name": "live-state", "paths": [".harness/state/work.json", ".harness/state/handoff.json"], "maxBytes": 18000}
   ],
   "clients": {
