@@ -176,6 +176,19 @@ npx xtrawl \
 Available commands are `search`, `tweet`, `profile-tweets`, `followers`, `following`,
 `verified-followers`, and `user-info`.
 
+## Use with AI agents
+
+XTrawl ships an agent skill that teaches Claude Code, Cursor, Codex, OpenCode, GitHub Copilot,
+Gemini CLI, Grok, and Windsurf how to use the library and CLI safely. Install it into a project:
+
+```bash
+npx skills add ensp1re/xtrawl --skill xtrawl --yes --agent claude-code
+```
+
+Replace `claude-code` with `cursor`, `codex`, `opencode`, `github-copilot`, `gemini-cli`, `grok`, or
+`windsurf`, and add `-g` to install it for your user. The skill lives in
+[skills/xtrawl/SKILL.md](skills/xtrawl/SKILL.md).
+
 ## How XTrawl works
 
 ```mermaid
@@ -345,6 +358,7 @@ Destructive duplicate cleanup is a dry run unless explicitly enabled.
 ## Documentation
 
 - [Complete usage and API guide](DOCUMENTATION.md)
+- [Agent skill](skills/xtrawl/SKILL.md)
 - [Product specification](docs/product/specification.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Security and data boundary](docs/security/data-boundary.md)
