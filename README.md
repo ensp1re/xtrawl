@@ -15,7 +15,11 @@ timelines, inspect individual posts, collect follower and following lists, and s
 JSON. It splits long searches, rotates authorized accounts when requests fail, and saves resumable
 progress in SQLite. Use it from TypeScript or the command line.
 
-XTrawl is published on npm as [`xtrawl`](https://www.npmjs.com/package/xtrawl).
+Current release: [`xtrawl@0.1.5`](https://www.npmjs.com/package/xtrawl/v/0.1.5)
+([source tag](https://github.com/ensp1re/xtrawl/tree/v0.1.5)).
+
+Version 0.1.5 updates dependencies, including Undici 8. It requires Node.js 22.19 or newer;
+upgrade older Node.js installations before updating from 0.1.4.
 
 > [!WARNING]
 > XTrawl is provided for educational and research purposes only. Automated scraping may violate
