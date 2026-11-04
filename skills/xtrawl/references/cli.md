@@ -1,14 +1,14 @@
-# XTrawl CLI reference (0.1.4)
+# XTrawl CLI reference (0.1.5)
 
 ```text
-npx xtrawl@0.1.4 [global options] COMMAND [values] [command options]
+npx xtrawl@0.1.5 [global options] COMMAND [values] [command options]
 ```
 
 - **stdout.** Results are printed only with `--pretty`; otherwise nothing goes to stdout. Use
   `--save` for files.
 - **Exit codes.** `0` means success, `1` means the run failed (the message is on stderr, with
   secrets redacted), and `2` means a usage error.
-- **Help.** Run `npx xtrawl@0.1.4 --help`, or run with no command.
+- **Help.** Run `npx xtrawl@0.1.5 --help`, or run with no command.
 
 ## Commands
 

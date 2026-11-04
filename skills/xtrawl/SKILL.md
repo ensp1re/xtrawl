@@ -12,8 +12,8 @@ likes, follows, or messages, and you must not try to make it do so.
 ## Runtime
 
 - Node.js 22.19 or newer.
-- CLI without installing: `npx xtrawl@0.1.4 <command> ...`. Library: `npm install xtrawl@0.1.4`.
-- Pin the version shown here, not the `latest` tag: this skill documents 0.1.4.
+- CLI without installing: `npx xtrawl@0.1.5 <command> ...`. Library: `npm install xtrawl@0.1.5`.
+- Pin the version shown here, not the `latest` tag: this skill documents 0.1.5.
 - Inside an xtrawl source checkout, use `npm run cli -- <command> ...` instead.
 
 ## Safety rules (always)
@@ -92,7 +92,7 @@ Full option, return-type, and facade reference: [references/api.md](references/a
 ## CLI
 
 ```text
-npx xtrawl@0.1.4 [global options] COMMAND [values] [command options]
+npx xtrawl@0.1.5 [global options] COMMAND [values] [command options]
 ```
 
 Rules that cause most failures:
@@ -107,15 +107,15 @@ Rules that cause most failures:
 
 ```bash
 # Credentials from a git-ignored env file (X_AUTH_TOKEN=..., X_CSRF_TOKEN=...)
-npx xtrawl@0.1.4 --env-file .env.local user-info OpenAI github --pretty
+npx xtrawl@0.1.5 --env-file .env.local user-info OpenAI github --pretty
 
-npx xtrawl@0.1.4 --env-file .env.local search "release" \
+npx xtrawl@0.1.5 --env-file .env.local search "release" \
   --from OpenAI --since 2026-08-01 --until 2026-08-15 \
   --display-type Latest --limit 100 --save --save-format both --save-dir ./exports
 
-npx xtrawl@0.1.4 --env-file .env.local tweet https://x.com/OpenAI/status/1234567890 --pretty
+npx xtrawl@0.1.5 --env-file .env.local tweet https://x.com/OpenAI/status/1234567890 --pretty
 
-npx xtrawl@0.1.4 --cookies-file ./accounts.json --db-path ./state/xtrawl.db \
+npx xtrawl@0.1.5 --cookies-file ./accounts.json --db-path ./state/xtrawl.db \
   followers OpenAI --limit 500 --resume --save --save-format json
 ```
 
