@@ -29,7 +29,7 @@ the command line. XTrawl is an authenticated, read-only collector for public X d
 
 Requirements:
 
-- Node.js 22.5 or newer
+- Node.js 22.19 or newer
 - npm
 - An X browser session that you own or are authorized to use
 

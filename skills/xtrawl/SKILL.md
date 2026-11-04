@@ -11,7 +11,7 @@ likes, follows, or messages, and you must not try to make it do so.
 
 ## Runtime
 
-- Node.js 22.5 or newer.
+- Node.js 22.19 or newer.
 - CLI without installing: `npx xtrawl@0.1.4 <command> ...`. Library: `npm install xtrawl@0.1.4`.
 - Pin the version shown here, not the `latest` tag: this skill documents 0.1.4.
 - Inside an xtrawl source checkout, use `npm run cli -- <command> ...` instead.
