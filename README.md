@@ -36,7 +36,7 @@ XTrawl never posts, replies, likes, follows, messages, or changes account settin
 
 ## Quick start
 
-XTrawl requires Node.js 22.5 or newer and npm.
+XTrawl requires Node.js 22.19 or newer and npm.
 
 ```bash
 npm install xtrawl

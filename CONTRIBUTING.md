@@ -15,7 +15,7 @@ read-only collection of public X data.
 
 ## Development setup
 
-XTrawl requires Node.js 22.5 or newer and npm.
+XTrawl requires Node.js 22.19 or newer and npm.
 
 ```bash
 git clone https://github.com/ensp1re/xtrawl.git

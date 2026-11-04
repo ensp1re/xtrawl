@@ -68,7 +68,7 @@ persisting progress locally, and exposing predictable typed results.
 ## Runtime and operations
 
 - Surfaces: TypeScript library and command-line interface.
-- Platforms: Node.js 22.5+ on macOS, Linux, and Windows where built-in SQLite is available.
+- Platforms: Node.js 22.19+ on macOS, Linux, and Windows where built-in SQLite is available.
 - Local/offline/cloud: local-first; network is required only for live collection and optional manifest refresh.
 - Scale and latency: bounded by configured concurrency, per-account daily limits, and platform responses.
 - Availability/recovery: restart-safe SQLite state, cooldowns, cursor checkpoints, and deterministic output files.
