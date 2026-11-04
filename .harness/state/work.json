@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "taskId": "release-0.1.5",
   "title": "Publish xtrawl patch release 0.1.5",
-  "status": "ready_for_review",
+  "status": "complete",
   "allowedTransitions": [
     "active",
     "blocked",
@@ -14,8 +14,8 @@
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
   "startedAt": "2026-11-04T19:29:40Z",
-  "updatedAt": "2026-11-04T19:29:40Z",
-  "nextAction": "Merge the release PR after CI passes, publish the verified xtrawl@0.1.5 tarball to npm, tag v0.1.5 at the merged release commit, and verify a clean registry install.",
+  "updatedAt": "2026-11-04T19:35:20Z",
+  "nextAction": "Monitor the published 0.1.5 release. Revisit TypeScript 7 when ts-jest and typescript-eslint support it.",
   "blocker": null,
   "verification": {
     "passed": [
@@ -23,12 +23,18 @@
       "npm run check and npm run verify (xtrawl@0.1.5, Node 26.13.0; 146 passed, 3 live skipped)",
       "npm pack (383 allowed package files; local audit notes excluded)",
       "Clean temporary tarball install: public XTrawl.create API, package version 0.1.5, and installed CLI help passed",
-      "git diff --check"
+      "git diff --check",
+      "GitHub Actions Verify for release PR #36 passed; merged at 3fff087",
+      "npm publish xtrawl@0.1.5 with public access and latest tag succeeded",
+      "Registry latest=0.1.5 and tarball SHA-512 matched the tested artifact",
+      "Fresh-cache registry install: public API import, version 0.1.5, and installed CLI help passed",
+      "Annotated tag v0.1.5 pushed at release commit 3fff087",
+      "README now links xtrawl@0.1.5 and its source tag and explains the Node.js 22.19 minimum",
+      "npm run verify (README release update; 146 tests passed, 3 live tests skipped)"
     ],
     "failed": [],
     "notRun": [
-      "Credential-gated live integration tests were not enabled.",
-      "Release PR CI and npm publication are pending."
+      "Credential-gated live integration tests were not enabled."
     ]
   }
 }
