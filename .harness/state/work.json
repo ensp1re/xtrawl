@@ -1,34 +1,34 @@
 {
   "schemaVersion": 1,
-  "taskId": "stable-dependency-update",
-  "title": "Pull main and update dependencies to supported stable releases",
+  "taskId": "release-0.1.5",
+  "title": "Publish xtrawl patch release 0.1.5",
   "status": "ready_for_review",
-  "allowedTransitions": ["active", "blocked", "ready_for_review", "complete"],
+  "allowedTransitions": [
+    "active",
+    "blocked",
+    "ready_for_review",
+    "complete"
+  ],
   "owner": "project-user",
   "plan": "docs/plans/initial-build.md",
   "product": "docs/product/specification.md",
   "architecture": "docs/architecture/overview.md",
-  "startedAt": "2026-11-04T19:16:44Z",
-  "updatedAt": "2026-11-04T19:23:05Z",
-  "nextAction": "Merge the dependency update after required CI passes. Revisit TypeScript 7 when ts-jest and typescript-eslint support it.",
+  "startedAt": "2026-11-04T19:29:40Z",
+  "updatedAt": "2026-11-04T19:29:40Z",
+  "nextAction": "Merge the release PR after CI passes, publish the verified xtrawl@0.1.5 tarball to npm, tag v0.1.5 at the merged release commit, and verify a clean registry install.",
   "blocker": null,
   "verification": {
     "passed": [
-      "npm ci --include=dev --ignore-scripts --no-audit followed by tsc -p tsconfig.test.json and npm run verify (clean install on Node 26.13.0 passed)",
-      "npm run check (Node 26.13.0; 146 tests passed, 3 live tests skipped)",
-      "tsc -p tsconfig.test.json (TypeScript 6.0.3)",
-      "npm run verify (Node 26.13.0; formatting, lint, build, tests, package/CLI smoke, harness validation, and context budget passed)",
-      "npm audit --omit=dev (0 vulnerabilities)",
-      "npm ls --depth=0 (valid dependency tree)",
-      "npm outdated (only TypeScript 7.0.2; unsupported by current ts-jest and typescript-eslint peer ranges)",
+      "npm ci --include=dev --ignore-scripts --no-audit",
+      "npm run check and npm run verify (xtrawl@0.1.5, Node 26.13.0; 146 passed, 3 live skipped)",
+      "npm pack (383 allowed package files; local audit notes excluded)",
+      "Clean temporary tarball install: public XTrawl.create API, package version 0.1.5, and installed CLI help passed",
       "git diff --check"
     ],
-    "failed": [
-      "npm audit (28 development dependency advisories: 4 low, 24 moderate; no high or critical)"
-    ],
+    "failed": [],
     "notRun": [
       "Credential-gated live integration tests were not enabled.",
-      "GitHub Actions will run on the pull request."
+      "Release PR CI and npm publication are pending."
     ]
   }
 }

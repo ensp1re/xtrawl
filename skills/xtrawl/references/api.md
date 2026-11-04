@@ -1,4 +1,4 @@
-# XTrawl TypeScript API reference (0.1.4)
+# XTrawl TypeScript API reference (0.1.5)
 
 Everything below is exported from `"xtrawl"` (ESM only).
 

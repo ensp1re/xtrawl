@@ -1,6 +1,6 @@
 {
   "name": "xtrawl",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Scrape public X posts, profiles, followers, and following",
   "license": "MIT",
   "type": "module",
